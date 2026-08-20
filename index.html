@@ -110,14 +110,14 @@ input,select,textarea{font-family:var(--font-body);}
 .fab-close:hover{background:var(--green-dark);}
 /* Menu deroulant reutilisable : boutons affiches en ligne sur desktop, repliés sous "..." sur mobile — sans JS supplémentaire. */
 .actions-dropdown{display:contents;}
-.actions-dropdown>summary{display:none;list-style:none;}
-.actions-dropdown>summary::-webkit-details-marker{display:none;}
+.actions-dropdown>.dropdown-toggle{display:none;}
 .actions-dropdown .dropdown-panel{display:contents;}
 @media (max-width:700px){
   .actions-dropdown{display:inline-block;position:relative;}
-  .actions-dropdown>summary{display:inline-flex;align-items:center;gap:4px;cursor:pointer;background:var(--navy-3);color:#fff;padding:8px 14px;border-radius:20px;font-size:12.5px;font-weight:600;}
-  .actions-dropdown[open]>summary{background:var(--steel);}
-  .actions-dropdown .dropdown-panel{display:flex;flex-direction:column;gap:6px;position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.2);padding:10px;min-width:210px;z-index:70;}
+  .actions-dropdown>.dropdown-toggle{display:inline-flex;align-items:center;gap:4px;cursor:pointer;background:var(--navy-3);color:#fff;border:none;padding:8px 14px;border-radius:20px;font-size:12.5px;font-weight:600;font-family:inherit;}
+  .actions-dropdown.open>.dropdown-toggle{background:var(--steel);}
+  .actions-dropdown .dropdown-panel{display:none;flex-direction:column;gap:6px;position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.2);padding:10px;min-width:210px;z-index:70;}
+  .actions-dropdown.open .dropdown-panel{display:flex;}
   .actions-dropdown .dropdown-panel .btn{width:100%;text-align:left;}
 }
 @keyframes pillPulse{0%{box-shadow:0 0 0 0 rgba(194,42,42,.6);}70%{box-shadow:0 0 0 8px rgba(194,42,42,0);}100%{box-shadow:0 0 0 0 rgba(194,42,42,0);}}
@@ -150,7 +150,9 @@ input,select,textarea{font-family:var(--font-body);}
 .summary-cell.ok .n{color:var(--green);} .summary-cell.warn .n{color:var(--amber);} .summary-cell.bad .n{color:var(--red);} .summary-cell.total .n{color:var(--navy);}
 
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;}
-.card{background:#fff;border:1px solid var(--line);border-left:5px solid var(--grey);padding:14px;position:relative;}
+.card{background:#fff;border:1px solid var(--line);border-left:5px solid var(--grey);padding:14px;position:relative;cursor:grab;}
+.card.dragging{opacity:.4;}
+.card.drag-over{outline:2px dashed var(--navy);outline-offset:-2px;}
 .card.st-ok{border-left-color:var(--green);} .card.st-warn{border-left-color:var(--amber);} .card.st-bad{border-left-color:var(--red);}
 .card .row1{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;}
 .card h3{font-family:var(--font-head);font-size:17px;margin:7px 0 2px;color:var(--navy);cursor:pointer;}
@@ -247,6 +249,8 @@ body.big-buttons .btn.small{padding:11px 16px;font-size:13.5px;}
 .check-lock-btn.active{background:var(--lock);color:#fff;}
 .check-sub-list{margin-top:8px;padding-left:10px;border-left:2px solid var(--line);}
 .check-sub-row{padding:6px 0;font-size:12.5px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;}
+.check-sub-status-buttons{flex:1 1 100%;}
+body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;font-size:13px;}
 .check-meta{font-size:10.5px;color:var(--muted);margin-top:5px;}
 
 /* Comments */
@@ -316,18 +320,18 @@ body.big-buttons .btn.small{padding:11px 16px;font-size:13.5px;}
 <div class="topbar">
   <div class="brand">
     <div class="mark">CIS</div>
-    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div></div>
+    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.9.0</div></div>
   </div>
   <div class="actions">
     <div class="checker-pill" id="checkerPill">Vérifié par : —</div>
     <div id="syncStatus" class="sync-status ok">💾 Enregistré</div>
-    <details class="actions-dropdown"><summary>⋯ Plus</summary><div class="dropdown-panel">
+    <div class="actions-dropdown"><button type="button" class="dropdown-toggle">⋯ Plus</button><div class="dropdown-panel">
       <div class="checker-pill" id="myCentrePill" style="background:var(--navy-3);">🏠 Mon centre : —</div>
       <button class="checker-pill" id="bigButtonsToggle" style="background:var(--navy-3);">🧤 Gros boutons</button>
       <button class="checker-pill" id="helpBtn" style="background:var(--navy-3);">❓ Aide</button>
       <button class="btn ghost" id="importBtn">Importer</button>
       <button class="btn primary" id="addVehicleBtn">+ Véhicule</button>
-    </div></details>
+    </div></div>
   </div>
 </div>
 
@@ -693,6 +697,21 @@ function openMyCentreModal(){
 }
 myCentrePill.addEventListener('click',openMyCentreModal);
 document.getElementById('helpBtn').addEventListener('click',()=>{currentView={type:'help',tab:'tuto'};render();});
+// Gestion générique des menus "⋯ Plus" (mobile) : un seul écouteur global, fonctionne quel que soit
+// le nombre de re-rendus de la page, pas besoin de le rebrancher à chaque fois.
+document.addEventListener('click',e=>{
+  const toggle=e.target.closest('.dropdown-toggle');
+  if(toggle){
+    const menu=toggle.closest('.actions-dropdown');
+    const wasOpen=menu.classList.contains('open');
+    document.querySelectorAll('.actions-dropdown.open').forEach(m=>m.classList.remove('open'));
+    if(!wasOpen) menu.classList.add('open');
+    return;
+  }
+  if(!e.target.closest('.actions-dropdown')){
+    document.querySelectorAll('.actions-dropdown.open').forEach(m=>m.classList.remove('open'));
+  }
+});
 
 document.getElementById('addVehicleBtn').addEventListener('click',()=>requireAdmin(()=>openVehicleModal()));
 document.getElementById('importBtn').addEventListener('click',()=>openImportModal());
@@ -763,6 +782,7 @@ function render(){
   else if(currentView.type==='hospitalTracking')renderHospitalTracking();
   else if(currentView.type==='help')renderHelp(currentView.tab);
 }
+const APP_VERSION='1.9.0'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -892,17 +912,34 @@ function monthlyOccurrenceDate(refDateStr,occurrence,weekday){
   return d.toISOString().slice(0,10);
 }
 function buildWeeklyAlerts(){
-  const monday=mondayOfWeek(todayStr());
+  const today=todayStr();
+  const monday=mondayOfWeek(today);
+  const prevMonday=new Date(monday+'T00:00:00'); prevMonday.setDate(prevMonday.getDate()-7);
+  const prevMondayStr=prevMonday.toISOString().slice(0,10);
+  const todayIdx=weekdayIndex(today); // 0=Lundi
   const alerts=[]; // {vehicleId, vehicleName, type, label, severity:'overdue'|'upcoming'}
+  const pushed=new Set();
+  const push=a=>{ const k=a.vehicleId+':'+a.type; if(pushed.has(k))return; pushed.add(k); alerts.push(a); };
   state.vehicles.forEach(v=>{
     const due=checkDueInfo(v);
     if(v.checkFrequency!=='quotidien'){
-      if(due.due) alerts.push({vehicleId:v.id,vehicleName:v.name,type:'Vérification matériel',label:due.label,severity:'overdue'});
-      else if(due.label.startsWith('À faire')) alerts.push({vehicleId:v.id,vehicleName:v.name,type:'Vérification matériel',label:due.label,severity:'upcoming'});
+      if(due.due) push({vehicleId:v.id,vehicleName:v.name,type:'Vérification matériel',label:due.label,severity:'overdue'});
+      else if(due.label.startsWith('À faire')) push({vehicleId:v.id,vehicleName:v.name,type:'Vérification matériel',label:due.label,severity:'upcoming'});
+    }
+    // Filet de sécurité indépendant du jour programmé : si aucune vérification matériel n'a eu lieu
+    // du tout cette semaine, on le signale à partir de mardi — sauf si la semaine précédente était
+    // déjà manquée aussi, auquel cas on le signale sans attendre (c'est déjà en retard).
+    const hist=v.checkHistory||[];
+    const doneThisWeek=hist.some(h=>h.date>=monday);
+    if(!doneThisWeek){
+      const doneLastWeek=hist.some(h=>h.date>=prevMondayStr && h.date<monday);
+      if(todayIdx>=1 || !doneLastWeek){
+        push({vehicleId:v.id,vehicleName:v.name,type:'Vérification matériel',label:'Jamais vérifié cette semaine',severity:'overdue'});
+      }
     }
     const tdue=techDueInfo(v);
-    if(tdue.due) alerts.push({vehicleId:v.id,vehicleName:v.name,type:'Vérification engin',label:tdue.label,severity:'overdue'});
-    else if(tdue.label.startsWith('À faire')||tdue.label.startsWith('Prévu')) alerts.push({vehicleId:v.id,vehicleName:v.name,type:'Vérification engin',label:tdue.label,severity:'upcoming'});
+    if(tdue.due) push({vehicleId:v.id,vehicleName:v.name,type:'Vérification engin',label:tdue.label,severity:'overdue'});
+    else if(tdue.label.startsWith('À faire')||tdue.label.startsWith('Prévu')) push({vehicleId:v.id,vehicleName:v.name,type:'Vérification engin',label:tdue.label,severity:'upcoming'});
   });
   return alerts;
 }
@@ -930,6 +967,30 @@ function isVehicleReadOnlyForMe(v){
   return !!(myCentre && v.cis && v.cis===myCentre && v.currentCis && v.currentCis!==myCentre);
 }
 /* ---------- Dashboard ---------- */
+function bindVehicleDragDrop(){
+  let draggedId=null;
+  app.querySelectorAll('[data-vehicle-drag]').forEach(card=>{
+    card.addEventListener('dragstart',e=>{
+      draggedId=card.dataset.vehicleDrag;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed='move';
+    });
+    card.addEventListener('dragend',()=>{ card.classList.remove('dragging'); });
+    card.addEventListener('dragover',e=>{ e.preventDefault(); card.classList.add('drag-over'); });
+    card.addEventListener('dragleave',()=>{ card.classList.remove('drag-over'); });
+    card.addEventListener('drop',async e=>{
+      e.preventDefault(); card.classList.remove('drag-over');
+      const targetId=card.dataset.vehicleDrag;
+      if(!draggedId || draggedId===targetId)return;
+      const fromIdx=state.vehicles.findIndex(v=>v.id===draggedId);
+      const toIdx=state.vehicles.findIndex(v=>v.id===targetId);
+      if(fromIdx<0||toIdx<0)return;
+      const[moved]=state.vehicles.splice(fromIdx,1);
+      state.vehicles.splice(toIdx,0,moved);
+      await saveState(); render();
+    });
+  });
+}
 function renderDashboard(){
   unitCountEl.textContent=state.vehicles.length+' véhicule(s) suivis';
   let totalItems=0,ok=0,warn=0,bad=0;
@@ -937,7 +998,7 @@ function renderDashboard(){
   let html=`
     <div class="dash-header"><div><h2>Tableau de bord</h2><p class="big">Parc du centre</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center;">
       <button class="btn ghost" id="globalSearchBtn">🔍 Recherche globale</button>
-      <details class="actions-dropdown"><summary>⋯ Plus</summary><div class="dropdown-panel">
+      <div class="actions-dropdown"><button type="button" class="dropdown-toggle">⋯ Plus</button><div class="dropdown-panel">
         <button class="btn ghost" id="dailyRecapBtn">📋 Récap du jour</button>
         <button class="btn ghost" id="repairsBtn">🔧 Suivi réparations${state.repairs.filter(r=>!r.returned).length?' ('+state.repairs.filter(r=>!r.returned).length+')':''}</button>
         <button class="btn ghost" id="hospitalTrackingBtn">🏥 Suivi matériel en CH${state.hospitalTracking.filter(h=>!h.returned).length?' ('+state.hospitalTracking.filter(h=>!h.returned).length+')':''}</button>
@@ -945,7 +1006,7 @@ function renderDashboard(){
         <button class="btn ghost small" id="dupBtn">🔍 Détecter les doublons</button>
         <button class="btn ghost small" id="exportBackupBtn">💾 Sauvegarder tout</button>
         <button class="btn ghost small" id="restoreBackupBtn">📤 Restaurer une sauvegarde</button>
-      </div></details>
+      </div></div>
     </div></div>
     <div class="summary-strip">
       <div class="summary-cell total"><div class="n">${totalItems}</div><div class="l">Items suivis</div></div>
@@ -1005,7 +1066,7 @@ function renderDashboard(){
       const due=checkDueInfo(v);
       const o2Total=vehicleGasTotals(v);
       html+=`
-      <div class="card st-${s.overall}" style="${v.outOfService?'border:2px solid var(--red-dark);':''}">
+      <div class="card st-${s.overall}" draggable="true" data-vehicle-drag="${v.id}" style="${v.outOfService?'border:2px solid var(--red-dark);':''}">
         ${v.outOfService?`<div style="background:var(--red-dark);color:#fff;margin:-14px -14px 10px;padding:8px 14px;font-family:var(--font-head);font-size:13px;">🚨 INDISPONIBLE — ${escapeHtml(v.outOfServiceInfo.dest)}${v.outOfServiceInfo.motif?' — '+escapeHtml(v.outOfServiceInfo.motif):''}${v.outOfServiceInfo.dateRetourPrevue?' · retour prévu '+fmtDate(v.outOfServiceInfo.dateRetourPrevue):''}</div>`:''}
         <div class="row1"><span class="tag">${v.emplacements.length} emplacement(s)</span>${v.amsec?'<span class="tag amsec">AMSEC</span>':''}</div>
         <h3 data-open="${v.id}">${escapeHtml(v.name)}</h3>
@@ -1085,6 +1146,7 @@ function renderDashboard(){
   document.getElementById('repairsBtn').addEventListener('click',openRepairsView);
   document.getElementById('hospitalTrackingBtn').addEventListener('click',openHospitalTrackingView);
   document.getElementById('globalSearchBtn').addEventListener('click',openGlobalSearchModal);
+  bindVehicleDragDrop();
   document.getElementById('securityBtn').addEventListener('click',openAdminSettingsModal);
   document.getElementById('dupBtn').addEventListener('click',()=>requireAdmin(openDuplicatesModal));
   document.getElementById('exportBackupBtn').addEventListener('click',exportFullBackup);
@@ -1787,22 +1849,35 @@ function openHospitalReceiveModal(it){
 }
 function openPharmaReceiveModal(){
   const items=state.reserves.pharmacie||[];
+  const pendingQty={}; // conserve les quantités déjà saisies même en re-triant/filtrant
+  let sortMode='name_asc';
   const overlay=document.createElement('div'); overlay.className='overlay';
   const renderRows=(filter)=>{
     const f=normalizeTxt(filter||'');
-    const filtered=f?items.filter(it=>normalizeTxt(it.name).includes(f)):items;
+    let filtered=f?items.filter(it=>normalizeTxt(it.name).includes(f)):items.slice();
+    filtered.sort((a,b)=>sortMode==='name_desc'?b.name.localeCompare(a.name,'fr'):a.name.localeCompare(b.name,'fr'));
     if(!filtered.length) return '<p style="font-size:12px;color:var(--muted);">Aucun article.</p>';
-    return filtered.map(it=>`<div class="article-row" style="grid-template-columns:1fr 80px;"><div style="font-size:12.5px;">${escapeHtml(it.name)} <span class="article-sub">(stock actuel ${it.qty})</span></div><input type="number" min="0" placeholder="0" style="width:60px;" data-recv-qty="${it.id}"></div>`).join('');
+    return filtered.map(it=>`<div class="article-row" style="grid-template-columns:1fr 80px;"><div style="font-size:12.5px;">${escapeHtml(it.name)} <span class="article-sub">(stock actuel ${it.qty})</span></div><input type="number" min="0" placeholder="0" style="width:60px;" value="${pendingQty[it.id]||''}" data-recv-qty="${it.id}"></div>`).join('');
   };
   overlay.innerHTML=`<div class="modal wide"><h3>📦 Réceptionner une commande — Pharmacie</h3>
     <p style="font-size:12px;color:var(--muted);">Indique la quantité reçue pour chaque référence concernée par la commande — le reste à 0 n'est pas modifié.</p>
-    <div class="field"><input id="pharmaRecvSearch" placeholder="Rechercher…"></div>
+    <div style="display:flex;gap:8px;">
+      <div class="field" style="flex:1;"><input id="pharmaRecvSearch" placeholder="Rechercher…"></div>
+      <div class="field"><select id="pharmaRecvSort"><option value="name_asc">A → Z</option><option value="name_desc">Z → A</option></select></div>
+    </div>
     <div id="pharmaRecvList" style="max-height:320px;overflow-y:auto;">${renderRows('')}</div>
     <div class="modal-actions"><button class="btn ghost" id="pharmaRecvCancel">Annuler</button><button class="btn primary" id="pharmaRecvConfirm">Valider la réception</button></div></div>`;
   document.body.appendChild(overlay);
+  const bindQtyInputs=()=>{
+    overlay.querySelectorAll('[data-recv-qty]').forEach(inp=>inp.addEventListener('input',()=>{
+      pendingQty[inp.dataset.recvQty]=inp.value;
+    }));
+  };
+  bindQtyInputs();
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
   document.getElementById('pharmaRecvCancel').addEventListener('click',()=>overlay.remove());
-  document.getElementById('pharmaRecvSearch').addEventListener('input',e=>{document.getElementById('pharmaRecvList').innerHTML=renderRows(e.target.value);});
+  document.getElementById('pharmaRecvSearch').addEventListener('input',e=>{document.getElementById('pharmaRecvList').innerHTML=renderRows(e.target.value); bindQtyInputs();});
+  document.getElementById('pharmaRecvSort').addEventListener('change',e=>{sortMode=e.target.value; document.getElementById('pharmaRecvList').innerHTML=renderRows(document.getElementById('pharmaRecvSearch').value); bindQtyInputs();});
   document.getElementById('pharmaRecvConfirm').addEventListener('click',async()=>{
     let count=0;
     document.querySelectorAll('[data-recv-qty]').forEach(inp=>{
@@ -2706,8 +2781,32 @@ function renderConfig(vehicleId){
     html+=`</div></div>`;
   });
   html+=`<div class="add-row" style="background:#fff;border:1px dashed var(--line);"><input placeholder="Nom du nouvel emplacement" id="newEmpName"><button class="btn small primary" id="addEmpBtn">Ajouter emplacement</button></div>`;
+  html+=`<button id="fabAddArticle" class="fab-close" style="background:var(--navy);right:100px;" title="Ajouter un article">➕ Article</button>`;
   app.innerHTML=html;
   bindConfigEvents(v);
+  document.getElementById('fabAddArticle').addEventListener('click',()=>openQuickAddArticleModal(v));
+}
+function openQuickAddArticleModal(v){
+  const overlay=document.createElement('div'); overlay.className='overlay';
+  overlay.innerHTML=`<div class="modal"><h3>➕ Ajouter un article</h3>
+    <div class="field"><label>Emplacement</label><select id="qaEmp">${v.emplacements.map(e=>`<option value="${e.id}">${escapeHtml(e.name)}</option>`).join('')}</select></div>
+    <div class="field"><label>Nom de l'article</label><input id="qaName"></div>
+    <div class="field"><label>Quantité</label><input type="number" min="1" value="1" id="qaQty"></div>
+    <div class="field"><label>Suivi réglementaire</label><select id="qaReg">${Object.keys(REG_TYPES).map(k=>`<option value="${k}">${REG_TYPES[k]}</option>`).join('')}</select></div>
+    <div class="modal-actions"><button class="btn ghost" id="qaCancel">Annuler</button><button class="btn primary" id="qaConfirm">Ajouter</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  document.getElementById('qaCancel').addEventListener('click',()=>overlay.remove());
+  setTimeout(()=>document.getElementById('qaName').focus(),50);
+  document.getElementById('qaConfirm').addEventListener('click',async()=>{
+    const empId=document.getElementById('qaEmp').value;
+    const emp=v.emplacements.find(e=>e.id===empId); if(!emp)return;
+    const name=document.getElementById('qaName').value.trim(); if(!name)return;
+    const qty=parseInt(document.getElementById('qaQty').value)||1;
+    const regType=document.getElementById('qaReg').value;
+    emp.articles.push({id:uid('a'),name,qty,lot:'',invNum:'',expiry:'',locked:false,lockLabel:'Tiroir complet',regType,regDueDate:'',status:'verifier',lastCheck:'',checkedBy:'',comments:[],qtyMissing:0,photos:[],volumeL:'',pressureBar:'',isContainer:false,wrongLocation:false,sousArticles:[]});
+    await saveState(); overlay.remove(); render();
+  });
 }
 
 function bindConfigEvents(v){
@@ -2932,6 +3031,9 @@ async function closeVehicleCheck(v){
   // Le nom de l'agent est réinitialisé une fois la vérification clôturée, pour que le prochain contrôle
   // (souvent fait par quelqu'un d'autre) ne reste pas attribué par erreur à la personne précédente.
   checkerNames=[]; activeCheckContext=null; await saveCheckers(); updateCheckerPill();
+  // Une fois clôturé : ne laisser ouverts que les emplacements qui ont encore une anomalie, replier le reste.
+  const remaining=buildAnomaliesList(v);
+  checkOpenEmps = remaining.length ? new Set(remaining.map(x=>x.empId)) : new Set();
   return st;
 }
 function maybeOfferClosure(v){
@@ -2969,8 +3071,8 @@ function renderCheck(vehicleId){
   const anomalies=buildAnomaliesList(v);
   const readOnly=isVehicleReadOnlyForMe(v);
   if(checkOpenEmps===null){
-    const empsWithAnomaly=new Set(anomalies.map(x=>x.empId));
-    checkOpenEmps = empsWithAnomaly.size ? empsWithAnomaly : new Set(v.emplacements[0]?[v.emplacements[0].id]:[]);
+    // Par défaut, tout est déplié — le bouton "Tout replier" reste disponible pour tout fermer d'un coup.
+    checkOpenEmps = new Set(v.emplacements.map(e=>e.id));
   }
   let html=`<div class="back-link" id="backLink">← Retour au tableau de bord</div>
   <div class="detail-header">
@@ -2978,12 +3080,12 @@ function renderCheck(vehicleId){
     <div class="detail-actions">
       ${readOnly?'':'<button class="btn primary small" id="voiceModeBtn">🎤 Mode vocal</button>'}
       <button class="btn ghost small" id="toTechTab">Vérification engin</button>
-      <details class="actions-dropdown"><summary>⋯ Plus</summary><div class="dropdown-panel">
+      <div class="actions-dropdown"><button type="button" class="dropdown-toggle">⋯ Plus</button><div class="dropdown-panel">
         ${readOnly?'':'<button class="btn ghost small" id="voiceSettingsBtn">🔊 Voix</button><button class="btn ghost small" id="interventionBtn">🚑 Retour d\'intervention</button><button class="btn ghost small" id="closeCheckBtn">✓ Clôturer la vérification</button>'}
         <button class="btn ghost small" id="orderBtn">🛒 Commande</button>
         ${readOnly?'':'<button class="btn ghost small" id="toConfigTab">Configurer</button>'}
         <button class="btn ghost small" id="printCheckBtn">🖨 Imprimer</button>
-      </div></details>
+      </div></div>
     </div>
   </div>
   ${v.outOfService?`<div class="comment-text" style="background:#fdecec;border-color:var(--red-dark);color:var(--red-dark);margin-bottom:12px;"><b>🚨 Engin indisponible</b> — actuellement à : <b>${escapeHtml(v.outOfServiceInfo.dest)}</b>${v.outOfServiceInfo.motif?' — '+escapeHtml(v.outOfServiceInfo.motif):''}${v.outOfServiceInfo.dateRetourPrevue?' · retour prévu le '+fmtDate(v.outOfServiceInfo.dateRetourPrevue):''}</div>`:''}
@@ -3051,11 +3153,10 @@ function renderCheck(vehicleId){
             html+=`<div class="check-sub-list">`;
             a.sousArticles.forEach(sub=>{
               const subReg=isSoonOrOverdue(sub.expiry);
-              html+=`<div class="check-sub-row"><span>${escapeHtml(sub.name)} <span class="article-sub">(qté ${sub.qty})</span> ${sub.expiry?`<span class="reg-badge ${subReg==='overdue'?'overdue':(subReg==='soon'?'soon':'')}">Péremption ${fmtDate(sub.expiry)}</span>`:''}${sub.wrongLocation?' <span class="reg-badge overdue">📍 Mauvais emplacement</span>':''} <button class="comment-btn ${sub.comments&&sub.comments.length?'has-comment':''}"${dis} title="Ajouter un commentaire" data-comment-sub="${emp.id}:${a.id}:${sub.id}">💬</button> <button class="comment-btn ${sub.wrongLocation?'has-comment':''}"${dis} title="${sub.wrongLocation?'Retirer le signalement':'Signaler un mauvais emplacement'}" data-wrong-loc-sub="${emp.id}:${a.id}:${sub.id}">📍</button></span>
-                <div class="check-status-buttons" style="flex:none;">
-                ${Object.keys(STATUS).map(k=>`<button class="check-status-btn ${sub.status===k?'active '+k:''}"${dis} style="min-width:0;padding:6px 9px;" data-set-sub-status="${emp.id}:${a.id}:${sub.id}:${k}">${STATUS[k].short}</button>`).join('')}
+              html+=`<div class="check-sub-row"><span>${escapeHtml(sub.name)} <span class="article-sub">(qté ${sub.qty})</span> ${sub.expiry?`<span class="reg-badge ${subReg==='overdue'?'overdue':(subReg==='soon'?'soon':'')}">Péremption ${fmtDate(sub.expiry)}</span>`:''}${sub.wrongLocation?' <span class="reg-badge overdue">📍 Mauvais emplacement</span>':''} <button class="comment-btn ${sub.comments&&sub.comments.length?'has-comment':''}"${dis} title="Ajouter un commentaire" data-comment-sub="${emp.id}:${a.id}:${sub.id}">💬</button> <button class="comment-btn ${sub.wrongLocation?'has-comment':''}"${dis} title="${sub.wrongLocation?'Retirer le signalement':'Signaler un mauvais emplacement'}" data-wrong-loc-sub="${emp.id}:${a.id}:${sub.id}">📍</button> <button class="comment-btn ${sub.expiry?'has-comment':''}"${dis} title="${sub.expiry?'Modifier la péremption':'Ajouter une péremption (si applicable)'}" data-set-sub-expiry-btn="${emp.id}:${a.id}:${sub.id}">📅</button></span>
+                <div class="check-status-buttons check-sub-status-buttons">
+                ${Object.keys(STATUS).map(k=>`<button class="check-status-btn ${sub.status===k?'active '+k:''}"${dis} data-set-sub-status="${emp.id}:${a.id}:${sub.id}:${k}">${STATUS[k].short}</button>`).join('')}
                 </div></div>
-                <div class="field-inline" style="margin-top:0;"><label>Péremption</label><input type="date" value="${sub.expiry||''}"${dis} style="width:130px;" data-set-check-sub-expiry="${emp.id}:${a.id}:${sub.id}"></div>
                 ${(sub.status==='manquant'||sub.status==='perime'||sub.status==='hs')?`<div class="field-inline"><label>Qté manquante</label><input type="number" min="0" max="${sub.qty}"${dis} style="width:55px;" value="${sub.qtyMissing||sub.qty}" data-set-sub-missing="${emp.id}:${a.id}:${sub.id}"><span class="article-sub">/ ${sub.qty}</span>${readOnly?'':`<button class="btn small ghost" data-pick-reserve-sub="${emp.id}:${a.id}:${sub.id}">🔁 Piocher en réserve</button><button class="btn small ghost" data-send-repair-sub="${emp.id}:${a.id}:${sub.id}">🔧 Envoyer en réparation</button>`}</div>`:''}
                 ${renderCommentsBlock(sub,'sub:'+emp.id+':'+a.id+':'+sub.id)}`;
             });
@@ -3219,9 +3320,13 @@ function renderCheck(vehicleId){
     const[empId,artId,subId]=el.dataset.setSubMissing.split(':'); const{a}=findArt(v,empId+':'+artId);
     const sub=a.sousArticles.find(s=>s.id===subId); sub.qtyMissing=Math.max(0,Math.min(sub.qty,parseInt(el.value)||0)); await saveState();
   }));
-  app.querySelectorAll('[data-set-check-sub-expiry]').forEach(el=>el.addEventListener('change',async()=>{
-    const[empId,artId,subId]=el.dataset.setCheckSubExpiry.split(':'); const{a}=findArt(v,empId+':'+artId);
-    const sub=a.sousArticles.find(s=>s.id===subId); sub.expiry=el.value; await saveState(); render();
+  app.querySelectorAll('[data-set-sub-expiry-btn]').forEach(el=>el.addEventListener('click',()=>{
+    const[empId,artId,subId]=el.dataset.setSubExpiryBtn.split(':'); const{a}=findArt(v,empId+':'+artId);
+    const sub=a.sousArticles.find(s=>s.id===subId);
+    openDateEntryModal('Péremption pour « '+sub.name+' » (laisser vide si non applicable)',sub.expiry,async(iso)=>{
+      if(iso===null)return; // "Laisser inchangé" : on ne touche à rien
+      sub.expiry=iso; await saveState(); render();
+    });
   }));
 }
 
@@ -3794,6 +3899,7 @@ function parseAxisXml(text){
     apply(on);
   });
 })();
+document.getElementById('appVersion').textContent='v'+APP_VERSION;
 loadState();
 </script>
 </body>
