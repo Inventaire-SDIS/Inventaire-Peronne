@@ -320,7 +320,7 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
 <div class="topbar">
   <div class="brand">
     <div class="mark">CIS</div>
-    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.14.0</div></div>
+    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.17.0</div></div>
   </div>
   <div class="actions">
     <div id="syncStatus" class="sync-status ok">💾 Enregistré</div>
@@ -401,9 +401,25 @@ function defaultData(){
     vsav:[]
   }};
 }
+function resetWeeklyTechCheckIfNeeded(v){
+  // Les cases de la vérification engin se décochent automatiquement à chaque nouvelle semaine
+  // (lundi) — l'agent doit revérifier activement et recocher, pas juste re-sauvegarder l'ancien état.
+  const t=v.techCheck; if(!t || !t.lastCheck) return false;
+  const lastMonday=mondayOfWeek(t.lastCheck);
+  const curMonday=mondayOfWeek(todayStr());
+  if(lastMonday<curMonday){
+    t.huileOk=false; t.liquideOk=false; t.laveGlaceOk=false; t.adblueOk=false;
+    t.essuieGlacesOk=false; t.pareBriseOk=false; t.retroOk=false;
+    t.sig={lumineux:false,sonore:false,croisement:false,route:false,brouillard:false,stop:false};
+    t.lastCheck=''; t.verifiedBy='';
+    return true;
+  }
+  return false;
+}
 function ensureVehicleShape(v){
   if(!v.techCheck) v.techCheck=defaultTechCheck();
   if(!v.techCheck.carrosseriePhotos) v.techCheck.carrosseriePhotos=[];
+  resetWeeklyTechCheckIfNeeded(v);
   if(!v.checkFrequency) v.checkFrequency='hebdomadaire';
   if(v.checkWeekday===undefined) v.checkWeekday=0; // 0=Lundi par défaut
   if(v.checkMonthlyOccurrence===undefined) v.checkMonthlyOccurrence='first';
@@ -583,8 +599,12 @@ async function loadState(){
     const res=await window.storage.get(STORAGE_KEY,true);
     if(res&&res.value){state=JSON.parse(res.value);}else{state=defaultData();await saveState();}
   }catch(e){state=defaultData();await saveState();}
-  state.vehicles.forEach(ensureVehicleShape);
+  let anyWeeklyReset=false;
+  state.vehicles.forEach(v=>{ if(resetWeeklyTechCheckIfNeeded(v)) anyWeeklyReset=true; ensureVehicleShape(v); });
   ensureReservesShape();
+  // Si la remise à zéro hebdomadaire de la vérification engin a modifié au moins un véhicule,
+  // on sauvegarde immédiatement pour que ce soit visible par tous les appareils, pas seulement celui-ci.
+  if(anyWeeklyReset) await saveState();
   if(state.centres.length===0){
     const found=new Set();
     state.vehicles.forEach(v=>{ if(v.cis) found.add(v.cis); });
@@ -799,7 +819,7 @@ function render(){
   else if(currentView.type==='hospitalTracking')renderHospitalTracking();
   else if(currentView.type==='help')renderHelp(currentView.tab);
 }
-const APP_VERSION='1.14.0'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.17.0'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -1304,7 +1324,7 @@ function openGlobalSearchModal(){
       (state.reserves[cat]||[]).forEach(it=>{
         if(normalizeTxt(it.name).includes(n)||normalizeTxt(it.numero||'').includes(n)){
           resCount++;
-          resHtml+=`<div class="article-row" style="grid-template-columns:1fr;padding:6px 0;"><div style="font-size:12.5px;cursor:pointer;" data-search-goto-reserve="${cat}">${RESERVE_CATS[cat].icon} ${escapeHtml(it.name)}${it.numero?' <span class="article-sub">(n° '+escapeHtml(it.numero)+')</span>':''} <span class="article-sub">— stock ${it.qty}${it.location==='reparation'?', en réparation':''}</span></div></div>`;
+          resHtml+=`<div class="article-row" style="grid-template-columns:1fr;padding:6px 0;"><div style="font-size:12.5px;cursor:pointer;" data-search-goto-reserve="${cat}">${RESERVE_CATS[cat].icon} ${escapeHtml(it.name)}${it.numero?' <span class="article-sub">(n° '+escapeHtml(it.numero)+')</span>':''} <span class="article-sub">— ${it.currentVehicleLabel&&it.qty===0?'📍 '+escapeHtml(it.currentVehicleLabel):'stock '+it.qty+(it.location==='reparation'?', en réparation':'')}</span></div></div>`;
         }
       });
     });
@@ -1328,8 +1348,13 @@ function openAddReserveItemModal(cat,isBottleCat){
     ${isBottleCat?`
       <div class="field"><label>Numéro de la bouteille (obligatoire)</label><input id="modRNumero"></div>
       <div class="field"><label>Volume (L)</label><input type="number" step="0.5" id="modRVolume"></div>
-      <div class="field"><label>Pression (bar)</label><input type="number" id="modRPressure" value="${defaultPressure}"></div>
-      <p style="font-size:11px;color:var(--muted);">Le nom est généré automatiquement : « Bouteille ${cat==='oxygene'?'Oxygène':'Air'} &lt;numéro&gt; ».</p>
+      <div class="field"><label>Pression nominale de la bouteille</label>
+        <select id="modRPressure">
+          <option value="200" ${defaultPressure===200?'selected':''}>200 bar</option>
+          <option value="300" ${defaultPressure===300?'selected':''}>300 bar</option>
+        </select>
+      </div>
+      <p style="font-size:11px;color:var(--muted);">Le nom est généré automatiquement : « Bouteille ${cat==='oxygene'?'Oxygène':'Air'} &lt;numéro&gt; ». La pression réelle mesurée se renseigne ensuite sur l'engin, au moment de chaque vérification.</p>
     `:`
       <div class="field"><label>Nom de l'article</label><input id="modRName"></div>
       <div class="field"><label>Stock</label><input type="number" min="0" id="modRQty" value="1"></div>
@@ -1419,7 +1444,7 @@ function renderReserve(cat,search,sort){
             <label>Pression (bar)</label><input type="number" min="0" value="${it.pressureBar||''}" style="width:65px;" placeholder="ex: 200" data-set-r-pressure="${it.id}">`:''}
             <label>Péremption</label><input type="date" value="${it.expiry||''}" data-set-r-expiry="${it.id}">
             <button class="btn small ghost" data-add-r-comment="${it.id}">💬 Ajouter une note</button>
-            <button class="btn small ghost" data-hospital-receive="${it.id}">🏥 Reçu d'un centre hospitalier</button>
+            ${cat!=='ari'?`<button class="btn small ghost" data-hospital-receive="${it.id}">🏥 Reçu d'un centre hospitalier</button>`:''}
             ${!inRepair?`<button class="btn small ghost" data-send-repair="${it.id}">🔧 Envoyer en réparation</button>`:''}
             <label>Catégorie</label>
             <select data-set-r-cat="${it.id}">${Object.keys(RESERVE_CATS).map(c=>`<option value="${c}" ${c===cat?'selected':''}>${RESERVE_CATS[c].icon} ${RESERVE_CATS[c].label}</option>`).join('')}</select>
@@ -1446,8 +1471,8 @@ function renderReserve(cat,search,sort){
     }
     if(isBottleCat){
       const defaultPressure = cat==='oxygene'?200:300;
-      h+=`<div class="add-row"><input placeholder="Numéro de la bouteille (obligatoire)" id="newRNumero" style="width:200px;"><input type="number" placeholder="Volume (L)" step="0.5" style="width:100px;" id="newRVolume"><input type="number" placeholder="Pression (bar)" value="${defaultPressure}" style="width:120px;" id="newRPressure"><button class="btn small primary" data-add-r="${cat}">Ajouter la bouteille</button></div>
-      <p style="font-size:11px;color:var(--muted);margin:6px 0 0;">Le nom est généré automatiquement : « Bouteille ${cat==='oxygene'?'Oxygène':'Air'} &lt;numéro&gt; ». Pression pré-remplie à ${defaultPressure} bar (standard ${cat==='oxygene'?'O2':'air comprimé'}), modifiable si besoin. Chaque bouteille est une référence unique (stock = 1).</p>`;
+      h+=`<div class="add-row"><input placeholder="Numéro de la bouteille (obligatoire)" id="newRNumero" style="width:200px;"><input type="number" placeholder="Volume (L)" step="0.5" style="width:100px;" id="newRVolume"><select id="newRPressure" style="width:120px;"><option value="200" ${defaultPressure===200?'selected':''}>200 bar</option><option value="300" ${defaultPressure===300?'selected':''}>300 bar</option></select><button class="btn small primary" data-add-r="${cat}">Ajouter la bouteille</button></div>
+      <p style="font-size:11px;color:var(--muted);margin:6px 0 0;">Le nom est généré automatiquement : « Bouteille ${cat==='oxygene'?'Oxygène':'Air'} &lt;numéro&gt; ». Pression nominale de la bouteille — la pression réelle mesurée se renseigne ensuite sur l'engin.</p>`;
     } else {
       h+=`<div class="add-row"><input placeholder="Nom de l'article" id="newRName"><input type="number" placeholder="Stock" value="1" style="width:60px;" id="newRQty"><input type="number" placeholder="Seuil" value="0" style="width:60px;" id="newRMin"><select id="newRTrackMode"><option value="stock">Par quantité (stock)</option><option value="unique">Individuel (numéro unique)</option></select><button class="btn small primary" data-add-r="${cat}">Ajouter</button></div>
       <p style="font-size:11px;color:var(--muted);margin:6px 0 0;">"Individuel" pour un matériel avec numéro de série unique (groupe électrogène, désincarcérateur...) — une ligne = une unité, traçable. "Par quantité" pour du consommable interchangeable (tuyaux, lances...).</p>`;
@@ -1540,8 +1565,14 @@ function renderReserve(cat,search,sort){
     }));
     app.querySelectorAll('[data-toggle-r-avail]').forEach(el=>el.addEventListener('click',()=>{
       const it=allItems.find(x=>x.id===el.dataset.toggleRAvail); if(!it)return;
-      it.qty=it.qty>0?0:1;
-      if(it.qty>0) it.currentVehicleLabel=''; // de retour en stock : plus rattaché à un engin
+      if(it.qty>0){
+        // Sortie du stock : on demande simplement où elle part, pour garder la traçabilité même
+        // sans passer par le circuit complet "Piocher en réserve" depuis un véhicule.
+        const loc=prompt('Sur quel véhicule / emplacement part cette bouteille ? (laisser vide si inconnu)','');
+        it.qty=0; it.currentVehicleLabel=loc&&loc.trim()?loc.trim():'';
+      } else {
+        it.qty=1; it.currentVehicleLabel='';
+      }
       render(); saveState();
     }));
     app.querySelectorAll('[data-set-r-qtymin]').forEach(el=>el.addEventListener('change',async()=>{
@@ -2080,8 +2111,9 @@ function openReservePicker(v,empId,artId,subId){
     target.status='ok'; target.qtyMissing=0; target.lastCheck=todayStr(); target.checkedBy=currentCheckerLabel();
     if(isContainerArt(target)) target.locked=true; // conteneur : reverrouillé une fois remplacé
     addComment(target,'Remplacé depuis réserve « '+RESERVE_CATS[cat].label+' » : '+it.name+(extra||''));
-    // Traçabilité : indique sur quel engin/emplacement se trouve désormais cette référence de réserve.
-    it.currentVehicleLabel=v.name+' — '+emp.name+' — '+target.name;
+    // Traçabilité : indique sur quel engin/emplacement se trouve désormais cette référence de réserve
+    // (juste l'emplacement, pas le nom précis de l'article — elle peut être dans un kit ARI ou seule).
+    it.currentVehicleLabel=v.name+' — '+emp.name;
     return saveState();
   }
   function returnOldBottleIfNeeded(){
