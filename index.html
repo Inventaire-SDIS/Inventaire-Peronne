@@ -320,10 +320,9 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
 <div class="topbar">
   <div class="brand">
     <div class="mark">CIS</div>
-    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.9.0</div></div>
+    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.10.0</div></div>
   </div>
   <div class="actions">
-    <div class="checker-pill" id="checkerPill">Vérifié par : —</div>
     <div id="syncStatus" class="sync-status ok">💾 Enregistré</div>
     <div class="actions-dropdown"><button type="button" class="dropdown-toggle">⋯ Plus</button><div class="dropdown-panel">
       <div class="checker-pill" id="myCentrePill" style="background:var(--navy-3);">🏠 Mon centre : —</div>
@@ -414,6 +413,7 @@ function ensureVehicleShape(v){
   if(v.fuelMinThreshold===undefined) v.fuelMinThreshold=75;
   if(v.adblueMinThreshold===undefined) v.adblueMinThreshold=10;
   if(v.hasAdblue===undefined) v.hasAdblue=true;
+  if(v.hasEngine===undefined) v.hasEngine=true;
   if(!v.checkHistory) v.checkHistory=[];
   if(!v.currentCis) v.currentCis=v.cis||''; // centre qui gère l'engin au quotidien (par défaut : le centre de rattachement)
   if(!v.loanHistory) v.loanHistory=[];
@@ -620,6 +620,10 @@ async function saveState(){
 window.addEventListener('online',()=>{ if(syncStatus==='error') saveState(); });
 async function saveCheckers(){try{await window.storage.set(CHECKER_KEY,JSON.stringify(checkerNames),false);}catch(e){}}
 function updateCheckerPill(){
+  // La pastille d'en-tête a été retirée (elle ne correspondait à aucun véhicule précis, puisque
+  // le nom est redemandé automatiquement à chaque changement de contexte). On garde la fonction
+  // pour ne pas casser les appels existants, mais elle ne touche plus rien à l'écran.
+  if(!checkerPill)return;
   checkerPill.textContent=checkerNames.length?'👤 '+checkerNames.join(', '):'⚠ Indiquer qui vérifie';
   checkerPill.classList.toggle('empty', checkerNames.length===0);
 }
@@ -665,7 +669,7 @@ function openCheckerModal(onClose){
   document.getElementById('newCheckerName').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addIt();}});
   setTimeout(()=>document.getElementById('newCheckerName').focus(),50);
 }
-checkerPill.addEventListener('click',()=>openCheckerModal());
+if(checkerPill) checkerPill.addEventListener('click',()=>openCheckerModal());
 async function saveMyCentre(name){
   myCentre=name;
   try{await window.storage.set(MY_CENTRE_KEY,name,false);}catch(e){}
@@ -782,7 +786,7 @@ function render(){
   else if(currentView.type==='hospitalTracking')renderHospitalTracking();
   else if(currentView.type==='help')renderHelp(currentView.tab);
 }
-const APP_VERSION='1.9.0'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.10.0'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -841,6 +845,7 @@ function wrongLocationCount(v){
   return n;
 }
 function techCheckAnomalies(v){
+  if(v.hasEngine===false) return [];
   const t=v.techCheck; if(!t || !t.lastCheck) return [];
   const labels=[];
   if(!t.huileOk) labels.push('Niveau d\'huile');
@@ -869,6 +874,7 @@ function techOverallOk(v){
   return v.techCheck && v.techCheck.lastCheck && techCheckAnomalies(v).length===0;
 }
 function techDueInfo(v){
+  if(v.hasEngine===false) return {due:false,label:'Non motorisé — pas de vérification engin',lastDate:null};
   const t=v.techCheck||{};
   const freq=v.techCheckFrequency||'hebdomadaire';
   const last=t.lastCheck;
@@ -2623,8 +2629,11 @@ function openVehicleModal(existing){
     <div class="field"><label>CIS d'origine</label><input id="mCis" value="${existing?escapeHtml(existing.cis||''):''}" placeholder="ex: CIS Péronne"></div>
     <div class="field"><label>Immatriculation</label><input id="mImmat" value="${existing?escapeHtml(existing.immat||''):''}" placeholder="ex: AA-123-BB"></div>
     <div class="field"><label>N° inventaire</label><input id="mInv" value="${existing?escapeHtml(existing.invNumber||''):''}" placeholder="ex: INV-1234"></div>
+    <label style="font-size:12.5px;display:flex;gap:6px;align-items:center;background:#fff8e6;padding:8px 10px;border-radius:4px;border:1px solid #f0dca0;"><input type="checkbox" id="mHasEngine" ${!existing||existing.hasEngine!==false?'checked':''}> Cet agrès est motorisé (moteur, propose une vérification engin)</label>
+    <p style="font-size:11px;color:var(--muted);margin:2px 0 8px;">Décoche pour un lot/remorque sans moteur — la vérification engin ne sera plus proposée pour cet agrès.</p>
     <div class="field"><label>Fréquence de vérification</label><select id="mFreq"><option value="quotidien" ${existing&&existing.checkFrequency==='quotidien'?'selected':''}>Quotidienne</option><option value="hebdomadaire" ${!existing||existing.checkFrequency==='hebdomadaire'?'selected':''}>Hebdomadaire</option></select></div>
     <div class="field" id="mWeekdayField" style="display:${(!existing||existing.checkFrequency!=='quotidien')?'block':'none'};"><label>Jour de la semaine (si hebdomadaire)</label><select id="mWeekday">${WEEKDAY_LABELS.map((d,i)=>`<option value="${i}" ${existing&&existing.checkWeekday===i?'selected':''}>${d}</option>`).join('')}</select></div>
+    <div id="mEngineFields" style="display:${!existing||existing.hasEngine!==false?'block':'none'};">
     <div class="field"><label>Fréquence — vérification engin (moteur, niveaux...)</label><select id="mTechFreq">
       <option value="hebdomadaire" ${!existing||existing.techCheckFrequency!=='mensuel'?'selected':''}>Hebdomadaire</option>
       <option value="mensuel" ${existing&&existing.techCheckFrequency==='mensuel'?'selected':''}>Mensuelle</option>
@@ -2640,6 +2649,7 @@ function openVehicleModal(existing){
       <label>Seuil mini AdBlue (%)</label><input type="number" min="0" max="100" id="mAdblueMin" value="${existing?existing.adblueMinThreshold:10}" style="width:70px;">
     </div>
     <label style="font-size:12.5px;display:flex;gap:6px;align-items:center;"><input type="checkbox" id="mHasAdblue" ${!existing||existing.hasAdblue!==false?'checked':''}> Véhicule équipé AdBlue</label>
+    </div>
     <label style="font-size:12.5px;display:flex;gap:6px;align-items:center;"><input type="checkbox" id="mAmsec" ${existing&&existing.amsec?'checked':''}> Véhicule AMSEC</label>
     <div class="modal-actions"><button class="btn ghost" id="mCancel">Annuler</button><button class="btn primary" id="mSave">Enregistrer</button></div></div>`;
   document.body.appendChild(overlay);
@@ -2647,6 +2657,9 @@ function openVehicleModal(existing){
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
   document.getElementById('mFreq').addEventListener('change',e=>{
     document.getElementById('mWeekdayField').style.display=e.target.value==='hebdomadaire'?'block':'none';
+  });
+  document.getElementById('mHasEngine').addEventListener('change',e=>{
+    document.getElementById('mEngineFields').style.display=e.target.checked?'block':'none';
   });
   document.getElementById('mTechFreq').addEventListener('change',e=>{
     const isMonthly=e.target.value==='mensuel';
@@ -2668,16 +2681,17 @@ function openVehicleModal(existing){
     const fuelMin=Math.max(0,Math.min(100,parseInt(document.getElementById('mFuelMin').value)||0));
     const adblueMin=Math.max(0,Math.min(100,parseInt(document.getElementById('mAdblueMin').value)||0));
     const hasAdblue=document.getElementById('mHasAdblue').checked;
+    const hasEngine=document.getElementById('mHasEngine').checked;
     if(existing){
       existing.name=name;existing.cis=cis;existing.immat=immat;existing.invNumber=inv;existing.amsec=amsec;
       existing.checkFrequency=freq;existing.checkWeekday=weekday;
       existing.techCheckFrequency=techFreq;existing.techCheckWeekday=techWeekday;
       existing.techCheckMonthlyOccurrence=techOcc;existing.techCheckMonthlyWeekday=techMonthlyWeekday;
-      existing.fuelMinThreshold=fuelMin;existing.adblueMinThreshold=adblueMin;existing.hasAdblue=hasAdblue;
+      existing.fuelMinThreshold=fuelMin;existing.adblueMinThreshold=adblueMin;existing.hasAdblue=hasAdblue;existing.hasEngine=hasEngine;
     }
     else{state.vehicles.push({id:uid('v'),name,cis,immat,invNumber:inv,amsec,checkFrequency:freq,checkWeekday:weekday,
       techCheckFrequency:techFreq,techCheckWeekday:techWeekday,techCheckMonthlyOccurrence:techOcc,techCheckMonthlyWeekday:techMonthlyWeekday,
-      fuelMinThreshold:fuelMin,adblueMinThreshold:adblueMin,hasAdblue:hasAdblue,
+      fuelMinThreshold:fuelMin,adblueMinThreshold:adblueMin,hasAdblue:hasAdblue,hasEngine:hasEngine,
       checkHistory:[],techCheck:defaultTechCheck(),emplacements:[]});}
     await saveState(); overlay.remove(); render();
   });
@@ -2697,7 +2711,7 @@ function renderConfig(vehicleId){
       <button class="btn ghost small" id="delVBtn">Supprimer</button>
     </div>
   </div>
-  <div class="mode-tabs"><div class="mode-tab" id="toCheckTab">Vérification matériel</div><div class="mode-tab" id="toTechTabFromConfig">Vérification engin</div><div class="mode-tab active">Configuration</div></div>`;
+  <div class="mode-tabs"><div class="mode-tab" id="toCheckTab">Vérification matériel</div>${v.hasEngine===false?'':'<div class="mode-tab" id="toTechTabFromConfig">Vérification engin</div>'}<div class="mode-tab active">Configuration</div></div>`;
 
   if(v.loanHistory && v.loanHistory.length){
     html+=`<div class="emp-block"><div class="emp-head"><span class="name">🔄 Historique des mouvements</span></div><div class="emp-body">`;
@@ -2812,7 +2826,7 @@ function openQuickAddArticleModal(v){
 function bindConfigEvents(v){
   document.getElementById('backLink').addEventListener('click',()=>{currentView={type:'dashboard'};render();});
   document.getElementById('toCheckTab').addEventListener('click',()=>{currentView={type:'check',vehicleId:v.id};render();});
-  document.getElementById('toTechTabFromConfig').addEventListener('click',()=>{currentView={type:'tech',vehicleId:v.id};render();});
+  const toTechCfgBtn=document.getElementById('toTechTabFromConfig'); if(toTechCfgBtn) toTechCfgBtn.addEventListener('click',()=>{currentView={type:'tech',vehicleId:v.id};render();});
   document.getElementById('editVBtn').addEventListener('click',()=>openVehicleModal(v));
   const loanBtnCfg=document.getElementById('loanBtnCfg'); if(loanBtnCfg) loanBtnCfg.addEventListener('click',()=>openLoanModal(v));
   const returnLoanBtnCfg=document.getElementById('returnLoanBtnCfg'); if(returnLoanBtnCfg) returnLoanBtnCfg.addEventListener('click',()=>returnLoan(v));
@@ -3079,7 +3093,7 @@ function renderCheck(vehicleId){
     <div class="detail-title"><h2>${escapeHtml(v.name)}</h2><div class="code">${escapeHtml(v.cis||'—')}${v.currentCis&&v.currentCis!==v.cis?' · géré par '+escapeHtml(v.currentCis):''} · ${s.pct}% conforme</div></div>
     <div class="detail-actions">
       ${readOnly?'':'<button class="btn primary small" id="voiceModeBtn">🎤 Mode vocal</button>'}
-      <button class="btn ghost small" id="toTechTab">Vérification engin</button>
+      ${v.hasEngine===false?'':'<button class="btn ghost small" id="toTechTab">Vérification engin</button>'}
       <div class="actions-dropdown"><button type="button" class="dropdown-toggle">⋯ Plus</button><div class="dropdown-panel">
         ${readOnly?'':'<button class="btn ghost small" id="voiceSettingsBtn">🔊 Voix</button><button class="btn ghost small" id="interventionBtn">🚑 Retour d\'intervention</button><button class="btn ghost small" id="closeCheckBtn">✓ Clôturer la vérification</button>'}
         <button class="btn ghost small" id="orderBtn">🛒 Commande</button>
@@ -3109,7 +3123,7 @@ function renderCheck(vehicleId){
   }
   html+=`<div class="mode-tabs"><div class="mode-tab active">Vérification matériel</div></div>`;
   html+=`<div class="tech-block" style="padding:12px 14px;margin-bottom:14px;background:#fff8e6;border:1px solid #f0dca0;">
-    <div style="font-family:var(--font-head);font-size:13px;color:var(--amber-dark);margin-bottom:10px;">⛽ Niveaux (à vérifier chaque jour, même hors vérification engin complète)</div>
+    ${v.hasEngine===false?'':`<div style="font-family:var(--font-head);font-size:13px;color:var(--amber-dark);margin-bottom:10px;">⛽ Niveaux (à vérifier chaque jour, même hors vérification engin complète)</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;">
       <div>
         <div style="display:flex;justify-content:space-between;font-size:11.5px;font-weight:600;margin-bottom:4px;"><span>Carburant</span><span id="dailyFuelVal">${v.techCheck.carburant||0}%</span></div>
@@ -3121,7 +3135,7 @@ function renderCheck(vehicleId){
         <div id="dailyAdblueGauge">${renderGauge(v.techCheck.adblue||0,v.adblueMinThreshold,'adb')}</div>
         <input type="range" min="0" max="100" value="${v.techCheck.adblue||0}" id="dailyAdblueRange"${readOnly?' disabled':''} style="width:100%;margin-top:6px;">
       </div>`}
-    </div>
+    </div>`}
     ${readOnly?'':`<button class="btn small ghost" id="carroReportBtn" style="margin-top:12px;">🚗 Signaler un problème carrosserie (photo)</button>`}
     ${v.techCheck.carrosseriePhotos&&v.techCheck.carrosseriePhotos.length?`<div style="margin-top:10px;">${renderCarrosseriePhotos(v)}</div>`:''}
   </div>`;
@@ -3178,7 +3192,7 @@ function renderCheck(vehicleId){
   app.innerHTML=html;
   document.getElementById('backLink').addEventListener('click',()=>{currentView={type:'dashboard'};checkOpenEmps=null;render();});
   const toConfigBtn=document.getElementById('toConfigTab'); if(toConfigBtn) toConfigBtn.addEventListener('click',()=>requireAdmin(()=>{currentView={type:'config',vehicleId:v.id};render();}));
-  document.getElementById('toTechTab').addEventListener('click',()=>{currentView={type:'tech',vehicleId:v.id};render();});
+  const toTechBtn=document.getElementById('toTechTab'); if(toTechBtn) toTechBtn.addEventListener('click',()=>{currentView={type:'tech',vehicleId:v.id};render();});
   const voiceBtn=document.getElementById('voiceModeBtn'); if(voiceBtn) voiceBtn.addEventListener('click',()=>startVoiceInventory(v));
   const voiceSetBtn=document.getElementById('voiceSettingsBtn'); if(voiceSetBtn) voiceSetBtn.addEventListener('click',openVoicePickerModal);
   document.getElementById('orderBtn').addEventListener('click',()=>openOrderModal(v));
@@ -3333,6 +3347,7 @@ function renderCheck(vehicleId){
 /* ---------- TECH CHECK VIEW (vérification engin) ---------- */
 function renderTech(vehicleId){
   const v=state.vehicles.find(x=>x.id===vehicleId); if(!v){currentView={type:'dashboard'};return render();}
+  if(v.hasEngine===false){currentView={type:'check',vehicleId:v.id};return render();}
   const t=v.techCheck=v.techCheck||defaultTechCheck();
   const isElec=t.motorisation==='Électrique';
   let html=`<div class="back-link" id="backLink">← Retour au tableau de bord</div>
