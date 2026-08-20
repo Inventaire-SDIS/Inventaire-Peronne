@@ -320,7 +320,7 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
 <div class="topbar">
   <div class="brand">
     <div class="mark">CIS</div>
-    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.11.0</div></div>
+    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.14.0</div></div>
   </div>
   <div class="actions">
     <div id="syncStatus" class="sync-status ok">💾 Enregistré</div>
@@ -344,7 +344,7 @@ const STATUS={ok:{label:'Conforme',short:'OK'},verifier:{label:'À vérifier',sh
 const REG_TYPES={'':'—','ARI':'ARI','O2':'Bouteille O2','PHARMA':'Péremption pharma','AUTRE':'Autre contrôle périodique'};
 const RESERVE_CATS={pharmacie:{label:'Réserve Pharmacie',icon:'💊'},ari:{label:'Réserve ARI',icon:'🫁'},oxygene:{label:'Bouteilles d\'oxygène',icon:'🫧'},petit:{label:'Petit matériel',icon:'🧰'},vsav:{label:'Matériel VSAV',icon:'🚑'}};
 const RESERVE_SEED_CATALOGUE={"oxygene": [{"name": "Bouteille Oxygène F32GMTN", "numero": "F32GMTN", "volumeL": "5.00", "pressureBar": "200.0"}, {"name": "Bouteille Oxygène F337RR0", "numero": "F337RR0", "volumeL": "5.00", "pressureBar": "200.0"}, {"name": "Bouteille Oxygène F35K5UM", "numero": "F35K5UM", "volumeL": "5.00", "pressureBar": "50.0"}, {"name": "Bouteille Oxygène F35UE1L", "numero": "F35UE1L", "volumeL": "5.00", "pressureBar": "100.0"}, {"name": "Bouteille Oxygène F41T0RM", "numero": "F41T0RM", "volumeL": "5.00", "pressureBar": "150.0"}, {"name": "Bouteille Oxygène F449C35", "numero": "F449C35", "volumeL": "5.00", "pressureBar": "200.0"}, {"name": "Bouteille Oxygène F4NUA2A", "numero": "F4NUA2A", "volumeL": "5.00", "pressureBar": "200.0"}, {"name": "Bouteille Oxygène F4YK4Y8", "numero": "F4YK4Y8", "volumeL": "5.00", "pressureBar": "150.0"}], "ari": [{"name": "ARI"}, {"name": "ARI 300b"}, {"name": "ARI complet"}, {"name": "ARI complets"}, {"name": "ARI complets +masques"}, {"name": "Bouteille ARI"}, {"name": "Bouteilles ARI"}, {"name": "Masques ARI"}, {"name": "Tableau suivi ARI porteurs"}, {"name": "Tableau suivi porteur ARI"}], "pharmacie": [{"name": "Appareil glycémie"}, {"name": "Aspirateur de mucosité +sonde ch 26"}, {"name": "Aspirateur mucosité + sonde CH26"}, {"name": "Attelle de traction CT6"}, {"name": "autopiqueurs"}, {"name": "bandelettes"}, {"name": "Bandes extensibles 10 cm"}, {"name": "Bandes extensibles 5 cm"}, {"name": "Bandes extensibles de 10 cm"}, {"name": "Bandes extensibles de 10cm"}, {"name": "Bandes extensibles de 5 cm"}, {"name": "BAVU Adulte"}, {"name": "BAVU ADULTE UU"}, {"name": "BAVU pédiatrique"}, {"name": "Boite d'ampoule"}, {"name": "Boite de gants UU"}, {"name": "Boîte d'ampoules"}, {"name": "Boîte de gants L"}, {"name": "Boîte de gants M"}, {"name": "Boîte de gants XL"}, {"name": "Boîte de masques"}, {"name": "Boîtes de gants (XL, L, M)"}, {"name": "Boîtes de masques"}, {"name": "Brassard adulte"}, {"name": "Brassard enfant"}, {"name": "Brassard Large"}, {"name": "Cable ECG"}, {"name": "Canule T0"}, {"name": "Canule T00"}, {"name": "Canule T1"}, {"name": "Canule T2"}, {"name": "Canule T3"}, {"name": "Canule T4"}, {"name": "Canules (T4, T3)"}, {"name": "Capteur SpO²"}, {"name": "Ceinture pelvienne"}, {"name": "Collecteur"}, {"name": "Collecteur d'alimentation de 100"}, {"name": "Collecteur OPCT DASRI"}, {"name": "compresse"}, {"name": "Compresses"}, {"name": "Couverture bactériostatique"}, {"name": "Couverture bactériostatique + drap UU"}, {"name": "Couverture de survie"}, {"name": "Câbles ECG"}, {"name": "Dosette antiseptique biseptine"}, {"name": "Dosettes antiseptique biseptine"}, {"name": "Drap de transfert"}, {"name": "Drap UU"}, {"name": "Détecteur CO"}, {"name": "Echarpes"}, {"name": "Fiche bilan"}, {"name": "Filets tubulaire (T1, T2, T3, T4)"}, {"name": "Gants de tronçonnage"}, {"name": "Garrot hémostatique tressé"}, {"name": "Gel hydroalcoolique"}, {"name": "glucodose"}, {"name": "Glucodoses"}, {"name": "lampe à pupilles"}, {"name": "Masque O2 HC ADULTE"}, {"name": "Masque O2 HC pédiatrique"}, {"name": "Masque O² HC ADULTE"}, {"name": "Masque O² HC pédiatrique"}, {"name": "Masques Adultes O2 HC"}, {"name": "Masques chirurgicaux"}, {"name": "Masques FFP2"}, {"name": "Masques pédiatriques O2 HC"}, {"name": "Paire de ciseaux Jesco"}, {"name": "paire de ciseaux type jesco"}, {"name": "Paire de gants"}, {"name": "Paire de gants anti chaleur"}, {"name": "paire de gants de manutention"}, {"name": "Paire de gants VL électrique"}, {"name": "Paires de gants"}, {"name": "pansement compressif (Israélien)"}, {"name": "Pansements américain"}, {"name": "Pansements américains"}, {"name": "Pansements compressifs"}, {"name": "Paquets de compresses stériles"}, {"name": "Poche de froid"}, {"name": "Pochette Gants"}, {"name": "Pochette masques"}, {"name": "Rouleau de sparadrap"}, {"name": "Rouleaux de sparadrap"}, {"name": "Réglette d'évaluation de la douleur"}, {"name": "Sac DASRI"}, {"name": "Sac de l'avant plombé"}, {"name": "Sachet de gants UU"}, {"name": "Sonde CH 26"}, {"name": "Sonde CH08"}, {"name": "Sonde CH26"}, {"name": "Sonde d'aspiration CH08"}, {"name": "Sondes CH 08"}, {"name": "sondes CH 26"}, {"name": "Sondes CH26"}, {"name": "Stéthoscope"}, {"name": "Sérum glucosé 30%"}, {"name": "Tensiomètre adulte"}, {"name": "Tensiomètre enfant"}, {"name": "Thermomètre + 5 embouts"}, {"name": "VOMIX"}], "vsav": [{"name": "ACT avec 7 sangles + billot + 2 sangles UU"}, {"name": "Adaptateur prise \"Maréchal\""}, {"name": "ADULTE (T1 T2 T3)"}, {"name": "ADULTE T1"}, {"name": "ADULTE T2"}, {"name": "ADULTE T3"}, {"name": "Aspirateur de mucosité manuel"}, {"name": "Avis de passage"}, {"name": "Bassin avec protection hygiénique"}, {"name": "Bouteille d'eau"}, {"name": "Bouteilles d'eau"}, {"name": "Brancard souple"}, {"name": "Chaise avec 2 sangles + drap"}, {"name": "Chaise avec 2 sangles + draps"}, {"name": "Cisaille de dégagement"}, {"name": "Civière de relevage 2 en 1 + partie fixe immo tête"}, {"name": "Clé autoroute n°545"}, {"name": "Clé autoroute n°651"}, {"name": "Clé à goujon"}, {"name": "Coussin"}, {"name": "Cylindre de porte"}, {"name": "Cônes de lubeck"}, {"name": "Draps UU"}, {"name": "Détergent surfaces hautes"}, {"name": "Embout pour MID"}, {"name": "Essentiel anglais"}, {"name": "Essentiel espagnol"}, {"name": "Extincteur Poudre 6kg"}, {"name": "Fiche de statuts et basculement ARTEMIS"}, {"name": "Fiche EBOLA"}, {"name": "Fiche SPDT/SPDTRE"}, {"name": "Fiches bilans + plaquette"}, {"name": "Filets tubulaires"}, {"name": "GHV dont un chef d'agrès"}, {"name": "Gilet APPRENANT"}, {"name": "Grande"}, {"name": "Harnais support tablette"}, {"name": "Immobilisateur de tête + 2 sangles UU"}, {"name": "jeu de sangles"}, {"name": "Jeux de chaînes (Uniquement en saison hivernale)"}, {"name": "Kit accouchement"}, {"name": "Kit AES"}, {"name": "Kit biologique"}, {"name": "Kit bocal+tubulure d'aspiration"}, {"name": "Kit brûlures"}, {"name": "Kit HbCO"}, {"name": "Kit hémostase"}, {"name": "Kit membre sectionné"}, {"name": "Kit NOVI"}, {"name": "Kit padding"}, {"name": "Lampe +chargeur"}, {"name": "MID"}, {"name": "Moyenne"}, {"name": "Oeillet de remorquage"}, {"name": "Outil de Forcement et déblais"}, {"name": "P1"}, {"name": "P2"}, {"name": "P3"}, {"name": "Paire de lunette de protection"}, {"name": "Paires de lunettes"}, {"name": "Paires de patchs DSA DT7"}, {"name": "Paires de sur-lunettes"}, {"name": "paquets de lavettes"}, {"name": "Parcellaire 1er appel+autoroute"}, {"name": "Parcellaire 2ème appel"}, {"name": "Patchs DSA DT7"}, {"name": "PEDIATRIQUE (P1 P2 P3)"}, {"name": "Petite"}, {"name": "Phare de recherche"}, {"name": "Pistolet"}, {"name": "Plan du département"}, {"name": "Poches de froid"}, {"name": "Pompe à dépression"}, {"name": "Potence"}, {"name": "Poubelle DASRI"}, {"name": "Principe généraux de sécurité"}, {"name": "Principes généraux de sécurité"}, {"name": "Rasoir"}, {"name": "Rescue kid"}, {"name": "Rouleau DASRI"}, {"name": "Rouleau de rubalise"}, {"name": "S-cut"}, {"name": "Saccoche bleu kit accident"}, {"name": "Sangle araignée"}, {"name": "Sangles de sécurité"}, {"name": "Seccoise"}, {"name": "Tablette avec chargeur"}, {"name": "Tente SDIS 80"}, {"name": "Tige métallique"}, {"name": "TPH 700 avec housse et harnais"}, {"name": "Triangle de présignalisation"}, {"name": "Triangles de pré-signalisation"}, {"name": "Télécommande CH Saint Quentin"}, {"name": "Télépéage"}, {"name": "Télépéage sur parebrise"}], "petit": [{"name": "Chargeurs + batteries"}, {"name": "1 Chaine et 2 poids"}, {"name": "40M de tuyaux DT+LDV 150"}, {"name": "ACT"}, {"name": "Adaptateur 24V/12V"}, {"name": "Adaptateur batterie holmatro 220v"}, {"name": "Adaptateur mousse 70mm"}, {"name": "Adaptateurs mousse 45mm"}, {"name": "Ancrage attelage PL"}, {"name": "Aspiraux"}, {"name": "Aspiraux 100"}, {"name": "Attaches PVC"}, {"name": "Baches"}, {"name": "Baches de protection transarente victime"}, {"name": "Badge télépéage"}, {"name": "Balai"}, {"name": "Balai cantonnier"}, {"name": "balais"}, {"name": "Barquette"}, {"name": "Barre de levage cabine"}, {"name": "Barre de secours dévidoir"}, {"name": "barres pour lorry"}, {"name": "Batte à feu"}, {"name": "Bidon antigel"}, {"name": "Bidon essence"}, {"name": "Bidon huile de chaîne"}, {"name": "Bidon huile hydraulique"}, {"name": "Bidon huile moteur"}, {"name": "Bidons absorbant"}, {"name": "Bloc à 2 axes"}, {"name": "Boa"}, {"name": "Bombe de détection"}, {"name": "Bombe dégivrante"}, {"name": "Bombe détection Gaz"}, {"name": "Bottes de tronçonnage"}, {"name": "Bouchon PI 100"}, {"name": "Bouchon PI 45"}, {"name": "Bouchon PI 65"}, {"name": "Bouchons obturateurs"}, {"name": "Boucliers de protection"}, {"name": "Boulet +chaine+ hérisson"}, {"name": "Bouteille d'air"}, {"name": "bouteilles d'air 300B"}, {"name": "Boîtier de commande Holmatro"}, {"name": "Brise vitre"}, {"name": "Burin"}, {"name": "Bâches matériels vertes"}, {"name": "Cagoule d'évacuation"}, {"name": "Cagoule de feu"}, {"name": "Cagoule de sauvetage"}, {"name": "Caisse à outils"}, {"name": "Cale de roue"}, {"name": "Cales carrées"}, {"name": "Cales de roue"}, {"name": "Cales en bois"}, {"name": "Cales en bois Droite"}, {"name": "Cales en bois gauche"}, {"name": "Cales escalier"}, {"name": "Cales stabpack + 1 maillet"}, {"name": "Cales stabpack + maillet"}, {"name": "Cales triangulaires"}, {"name": "Caméra thermique + chargeur usb et bloc prise"}, {"name": "Canne feu de cheminée"}, {"name": "Canne plongeante"}, {"name": "Canne rangement tuyaux"}, {"name": "Carré de manœuvre"}, {"name": "Carte carburant"}, {"name": "Carte de la Somme"}, {"name": "Carte DFCI"}, {"name": "Carte point de rassemblement  Nord Seine Europe"}, {"name": "Carton bouchons d'oreilles anti bruit"}, {"name": "Casque F2 jaune et rouge + housse"}, {"name": "Casque F2 XR rouge"}, {"name": "Casque rouge + housse"}, {"name": "Casque+ protection auditive"}, {"name": "casques F2 XR jaune"}, {"name": "ceinturons"}, {"name": "Ceinturons + longes"}, {"name": "Chargeur Milwaukee + batteries"}, {"name": "Chargeur valise allume cigare"}, {"name": "chariots devidoirs"}, {"name": "Chiffons"}, {"name": "Cisaille électroportative"}, {"name": "Cisailles hydraulique"}, {"name": "Ciseau a brique"}, {"name": "Classeur 1er et 2e appel"}, {"name": "Classeur FAD renault/citroen/peugeot"}, {"name": "Classeur fiches matériels"}, {"name": "Clé autoroute"}, {"name": "Clé BTR"}, {"name": "Clé de barrage"}, {"name": "Clé de bouche"}, {"name": "Clé de fontainier"}, {"name": "Clé de poteau"}, {"name": "Clé de poteau sur dévidoir"}, {"name": "Clé de secours électrovanne"}, {"name": "Clé fédérale"}, {"name": "Clé gaz"}, {"name": "Clé oeillet"}, {"name": "Clé plate"}, {"name": "Clé plate de 24"}, {"name": "Clé sous tampon"}, {"name": "Clé TORX"}, {"name": "Clé torx coudée"}, {"name": "Clé vanne pneumatique de secours"}, {"name": "Clé à molette"}, {"name": "Clé à pipe"}, {"name": "Clés barrage gaz"}, {"name": "Clés de blocage"}, {"name": "Clés plate"}, {"name": "Clés à molette"}, {"name": "Coffret 12 douilles"}, {"name": "Coffret 12 Torx"}, {"name": "Coffret cliquets"}, {"name": "Col de cygne de 40"}, {"name": "Col de cygne de 70"}, {"name": "Collier d'amarrage 45mm"}, {"name": "Colliers d'amarrage70mm"}, {"name": "Commande"}, {"name": "Commande de treuil"}, {"name": "commande en sac"}, {"name": "Commandes"}, {"name": "Commandes en sac"}, {"name": "Cordage"}, {"name": "Cordage avec mousqueton"}, {"name": "Cordelettes de blocage"}, {"name": "Coude d'alimentation 100"}, {"name": "Coupe boulon"}, {"name": "Coupe pare-brise"}, {"name": "Coupe pédale hydraulique"}, {"name": "Coussins de levage 21T"}, {"name": "Coussins de levage 37T"}, {"name": "Coussins de levage 53T"}, {"name": "Coussins de levage 87T"}, {"name": "Cric"}, {"name": "Croc"}, {"name": "Crépine"}, {"name": "Cutter"}, {"name": "Câble tirfor 20m sur touret"}, {"name": "Cône de Lubeck"}, {"name": "cônes"}, {"name": "DFT"}, {"name": "Disques multi-matériaux meuleuse"}, {"name": "Disqueuse thermique"}, {"name": "Division 100 2X65"}, {"name": "Division 45 2X22 sur pompe"}, {"name": "Division 65 2X40"}, {"name": "Division 65 2X45 sur tuyaux pré connectés 70"}, {"name": "Division 70 2X45"}, {"name": "Division mixte"}, {"name": "Douilles PL T27"}, {"name": "Douilles PL T32"}, {"name": "Déboulonneuse"}, {"name": "Démonte roue"}, {"name": "Détecteur de CO"}, {"name": "Détendeurs avec raccord"}, {"name": "Dévidoirs complets"}, {"name": "Ecarteur hydraulique"}, {"name": "Ecarteur électroportatif"}, {"name": "Echelle modulable + pieds"}, {"name": "Echelle à coulisse"}, {"name": "Echelle à crochets"}, {"name": "Elingues 3M/4M/6M"}, {"name": "Elingues 3T"}, {"name": "Enrouleur +pied"}, {"name": "Enrouleur 220v"}, {"name": "Enrouleur 25M 220V"}, {"name": "Entonnoir"}, {"name": "Eponges"}, {"name": "Etais hydrauliques"}, {"name": "Etais mécaniques"}, {"name": "Etrangleur"}, {"name": "Etrangleurs"}, {"name": "Explo 4 gaz + chargeur"}, {"name": "Extincteur CO2"}, {"name": "Extincteur CO2 2kgs"}, {"name": "Extincteur CO2 5kgs"}, {"name": "Extincteur poudre"}, {"name": "Extincteur poudre 9kgs"}, {"name": "Extincteur poudre 9KGS ABC"}, {"name": "Extincteurs eau+additif"}, {"name": "Extincteurs poudre 9kg"}, {"name": "Fiche + câble de mise à la terre"}, {"name": "Fiche guide message et procédure garmin"}, {"name": "Fiche PGR"}, {"name": "Fiche signalisation des risques"}, {"name": "Fiche technique saccoche holmatro"}, {"name": "Fiches d'ancrage"}, {"name": "Fiches d'ancrages"}, {"name": "Fiches d'haubanage"}, {"name": "Flexible"}, {"name": "Flexible bleu 10m"}, {"name": "Flexible de gonflage"}, {"name": "Flexible jaune 10m"}, {"name": "Flexibles oranges 10m"}, {"name": "Flexibles à robinet"}, {"name": "Flotteur"}, {"name": "Fourche droite"}, {"name": "Fourches recourbées"}, {"name": "Gaffe + rallonge"}, {"name": "GHV"}, {"name": "Grande pince"}, {"name": "Groupe thermique hydraulique"}, {"name": "Groupe électrogène"}, {"name": "Guide d'utilisation du ccrm"}, {"name": "Hache"}, {"name": "Hachette"}, {"name": "Hachettes"}, {"name": "Halligan cut"}, {"name": "Halligan Tools"}, {"name": "Hauban"}, {"name": "Housse de pupitre"}, {"name": "Hérisson"}, {"name": "Jeu de chaine (En saison hivernale uniquement)"}, {"name": "Jeu de joints"}, {"name": "Jeu de nouveau parcellaire"}, {"name": "Jeu pinces véhicule"}, {"name": "Kit bleu toxicité des fumèes"}, {"name": "Kit toxicité"}, {"name": "Lames de scie sabre"}, {"name": "Lames à crochet stabfast"}, {"name": "Lampe jaune individuelle + chargeur"}, {"name": "Lampe portives ATEX jaunes"}, {"name": "lampes bleues à batterie"}, {"name": "Lampes portatives"}, {"name": "Lance 22"}, {"name": "Lance canon"}, {"name": "Lance canon +pied + tromblon 4500L/min"}, {"name": "Lance feu de cheminée"}, {"name": "Lance GELLUCAL"}, {"name": "Lance rideau d'eau 45"}, {"name": "Lance rideau d'eau 70"}, {"name": "LDJR 1000"}, {"name": "LDJR 45 + Adaptateur mousse"}, {"name": "LDJR 45 + Adaptateur mousse + adaptateur haut foisonnement"}, {"name": "LDJR 500"}, {"name": "LDV 70 +Adaptateur mousse"}, {"name": "Ligne guide"}, {"name": "Lot de bord"}, {"name": "Lot de bord + cric"}, {"name": "LSPCC"}, {"name": "LSPCC Echelle"}, {"name": "Lumafor"}, {"name": "Machette"}, {"name": "Manche semi rigide du ventilateur"}, {"name": "Manche souple du ventilateur"}, {"name": "Manche souple pour ventilateur"}, {"name": "Manilles"}, {"name": "Manilles 2T"}, {"name": "Manivelle pour dévidoir"}, {"name": "Manivelle secours LDT"}, {"name": "Manomètre de gonflage"}, {"name": "Manomètre de gonflage + flexible"}, {"name": "Manomètre de gonflage + rallonge pneumatique"}, {"name": "Manugel"}, {"name": "Marteau"}, {"name": "Masse"}, {"name": "Massette"}, {"name": "Miroir sur canne +housse"}, {"name": "Miroir/tison/Pince/tournevis"}, {"name": "Mousqueton + 4 dérivations"}, {"name": "OFD"}, {"name": "Outil mixte électroportatif"}, {"name": "Pantalon de tronçonnage"}, {"name": "Parcellaire 1er appel + plan A1/A29"}, {"name": "Parcellaire 1er et 2-ème appel"}, {"name": "Parcellaire 1er et 2ème appel"}, {"name": "Parcellaire 2e appel"}, {"name": "Parcellaire A3"}, {"name": "Pelle"}, {"name": "Pelle/racloir"}, {"name": "pelles"}, {"name": "Perche échelle à main"}, {"name": "Petite pince"}, {"name": "Phare 500W sur trépied"}, {"name": "Phare LED"}, {"name": "Phares de 1000w"}, {"name": "Phares Led sur trépieds"}, {"name": "Pince anti fuite 45"}, {"name": "Pince anti fuite 70"}, {"name": "Pince coupante"}, {"name": "Pince multiprise"}, {"name": "Pinces pour batterie"}, {"name": "Pioche"}, {"name": "Piquet de terre"}, {"name": "Plan A1/A29/Somme"}, {"name": "Plans durs 80/120/180"}, {"name": "Plaque de soutien de base"}, {"name": "Plaque gaz barré"}, {"name": "Plaque électricité coupé"}, {"name": "Plaques pour échelle"}, {"name": "Plateforme PL"}, {"name": "Pointerolle"}, {"name": "Polycoise"}, {"name": "Pompes hydrauliques"}, {"name": "Poulie"}, {"name": "Poulie mouflage 5T"}, {"name": "Projecteur"}, {"name": "Protections airbags passager"}, {"name": "Protections airbags PL"}, {"name": "Protections airbags VL"}, {"name": "Protections de coupe grand modèle"}, {"name": "Protections de coupe moyen modèle"}, {"name": "Protections de coupe petit modèle"}, {"name": "Queue de paon 45"}, {"name": "Queue de paon 70"}, {"name": "Raccord de réduction"}, {"name": "Raccord de réduction 100/65"}, {"name": "Raccord de réduction 65/40"}, {"name": "Raccord prolongement LDT"}, {"name": "Radio ATEX rouge + housse + chargeur"}, {"name": "Radio rouge ATEX + chargeur"}, {"name": "Rallonge 500w"}, {"name": "Rallonge maréchal"}, {"name": "Rallonge mise à la terre"}, {"name": "Rallonge orange de secours"}, {"name": "Rallonge électrique Maréchal"}, {"name": "Rallonges 220v sur touret"}, {"name": "Rallonges de 1000"}, {"name": "Rallonges de 1000w"}, {"name": "Rallonges de 125"}, {"name": "Rallonges de 250"}, {"name": "Rallonges de 500"}, {"name": "Retenue"}, {"name": "Retenue 100 2X65"}, {"name": "rondelles pour roues lorry"}, {"name": "roues lorry"}, {"name": "Rouleau protection de coupe"}, {"name": "Rouleau protection vitrage"}, {"name": "Rouleaux de rubalise"}, {"name": "Rubalise"}, {"name": "Réduction 100/65"}, {"name": "Sabots crossraming"}, {"name": "Sabots pour écarteur"}, {"name": "Saccoche noir : câble de démarrage + manomètre et flexible de gonflage"}, {"name": "Saccoches holmatro"}, {"name": "Sachets bouchons oreilles"}, {"name": "Sacoche bleu kit accident"}, {"name": "Sacoche bleue kit accident"}, {"name": "Sangle de sauvetage"}, {"name": "Sangles bleues"}, {"name": "Sangles rouges"}, {"name": "Sangles à cliquer bleus"}, {"name": "Sangles à cliquet orange"}, {"name": "Sangles à cliquets jaune"}, {"name": "Sangles à cliquets orange"}, {"name": "Sangles à fuite"}, {"name": "Sceau"}, {"name": "Scie egoïne"}, {"name": "Scie sabre"}, {"name": "Scie à bois"}, {"name": "Scie à buche + lame"}, {"name": "Scie à bûche"}, {"name": "Scie à métaux"}, {"name": "Seau métallique"}, {"name": "Seau plastique"}, {"name": "Seau pompe"}, {"name": "Seau pompe dorsal"}, {"name": "Seau poudre extinctrice"}, {"name": "Socles de balises pour cônes de lubeck"}, {"name": "Stabfast Lukas"}, {"name": "Stabfast Webber"}, {"name": "Stylo Velléda"}, {"name": "Support brancard"}, {"name": "Support cabine"}, {"name": "Support de verin"}, {"name": "Tableau blanc"}, {"name": "Tablette"}, {"name": "Tenaille"}, {"name": "Tiges métal 1M"}, {"name": "Tiges plastiques 1M"}, {"name": "Tirfor 3200 + barre"}, {"name": "TLD"}, {"name": "Tournevis"}, {"name": "Tournevis + 3 embouts"}, {"name": "Triangle de pré-signalisation"}, {"name": "triangles de signalisation"}, {"name": "Tricoises de 100"}, {"name": "Tromblons 45"}, {"name": "Tromblons 70"}, {"name": "Tronçonneuse"}, {"name": "Trousse de 1er secours"}, {"name": "Trépied pour lumafor"}, {"name": "Trépied pour phare de 1000w"}, {"name": "Trépied pour phare de 500w"}, {"name": "Trépied pour phare LED"}, {"name": "Trépied projecteur 24V"}, {"name": "Tuyau 110X20"}, {"name": "Tuyau 45/40"}, {"name": "Tuyau 45X10"}, {"name": "Tuyau 70X10"}, {"name": "Tuyau 70x5"}, {"name": "Tuyau de 70mm"}, {"name": "Tuyaux 110X20"}, {"name": "Tuyaux 22"}, {"name": "Tuyaux 45 en O"}, {"name": "Tuyaux 45 en Z"}, {"name": "Tuyaux 45/20"}, {"name": "Tuyaux 45X20"}, {"name": "TUYAUX 45X20 Préconnectés"}, {"name": "Tuyaux 45X20 sur dévidoir"}, {"name": "Tuyaux 70/20"}, {"name": "Tuyaux 70X20"}, {"name": "TUYAUX 70X20 Pré connectés"}, {"name": "Tuyaux de 70X10"}, {"name": "Tuyaux LDT + Lance"}, {"name": "Tète de soutien en L"}, {"name": "Tète de soutien en U"}, {"name": "Tète en diamant"}, {"name": "Tète en V"}, {"name": "Tète plate"}, {"name": "Tète à pivot plate"}, {"name": "Tète à pivot triangulaire"}, {"name": "Valises + 6 balises + cordelettes + chargeur"}, {"name": "Vanne américaine"}, {"name": "Vanne de pied d'échelle"}, {"name": "Ventilateur hydraulique"}, {"name": "Ventilateur Leader BATFAN"}, {"name": "Verins hydrauliques"}, {"name": "Verins électroportatifs"}, {"name": "Veste de tronçonnage"}, {"name": "Visière pour casque"}]};
-const FREQ_LABELS={quotidien:'Quotidienne',hebdomadaire:'Hebdomadaire'};
+const FREQ_LABELS={quotidien:'Quotidienne',hebdomadaire:'Hebdomadaire',mensuel:'Mensuelle'};
 
 let state={vehicles:[]};
 let checkerNames=[];
@@ -406,6 +406,8 @@ function ensureVehicleShape(v){
   if(!v.techCheck.carrosseriePhotos) v.techCheck.carrosseriePhotos=[];
   if(!v.checkFrequency) v.checkFrequency='hebdomadaire';
   if(v.checkWeekday===undefined) v.checkWeekday=0; // 0=Lundi par défaut
+  if(v.checkMonthlyOccurrence===undefined) v.checkMonthlyOccurrence='first';
+  if(v.checkMonthlyWeekday===undefined) v.checkMonthlyWeekday=0;
   if(v.techCheckFrequency===undefined) v.techCheckFrequency='hebdomadaire';
   if(v.techCheckWeekday===undefined) v.techCheckWeekday=0;
   if(v.techCheckMonthlyOccurrence===undefined) v.techCheckMonthlyOccurrence='first';
@@ -420,6 +422,7 @@ function ensureVehicleShape(v){
   if(v.outOfService===undefined) v.outOfService=false;
   if(v.outOfServiceInfo===undefined) v.outOfServiceInfo=null;
   if(!v.breakdownHistory) v.breakdownHistory=[];
+  if(!v.dailyCheckHistory) v.dailyCheckHistory=[];
   (v.emplacements||[]).forEach(e=>{(e.articles||[]).forEach(a=>{
     migrateComment(a);
     if(a.qtyMissing===undefined)a.qtyMissing=0;
@@ -427,8 +430,18 @@ function ensureVehicleShape(v){
     if(a.volumeL===undefined)a.volumeL='';
     if(a.pressureBar===undefined)a.pressureBar='';
     if(a.isContainer===undefined) a.isContainer=!!(a.sousArticles&&a.sousArticles.length);
+    if(a.dailyCheck===undefined) a.dailyCheck=false;
     if(a.wrongLocation===undefined) a.wrongLocation=false;
-    (a.sousArticles||[]).forEach(s=>{migrateComment(s);if(s.qtyMissing===undefined)s.qtyMissing=0;if(s.wrongLocation===undefined)s.wrongLocation=false;});
+    (a.sousArticles||[]).forEach(s=>{
+      migrateComment(s);
+      if(s.qtyMissing===undefined)s.qtyMissing=0;
+      if(s.wrongLocation===undefined)s.wrongLocation=false;
+      if(s.regType===undefined)s.regType='';
+      if(s.regDueDate===undefined)s.regDueDate='';
+      if(s.invNum===undefined)s.invNum='';
+      if(s.volumeL===undefined)s.volumeL='';
+      if(s.pressureBar===undefined)s.pressureBar='';
+    });
   });});
   return v;
 }
@@ -786,7 +799,7 @@ function render(){
   else if(currentView.type==='hospitalTracking')renderHospitalTracking();
   else if(currentView.type==='help')renderHelp(currentView.tab);
 }
-const APP_VERSION='1.11.0'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.14.0'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -804,6 +817,17 @@ function checkDueInfo(v){
     if(!last) return {due:true,label:'Jamais vérifié',lastDate:null};
     const days=Math.floor((new Date(today)-new Date(last.date))/(1000*60*60*24));
     return {due:days>=1,label: days<=0?'Vérifié aujourd\'hui':days+' jour(s) depuis la dernière vérif.',lastDate:last.date};
+  }
+  if(freq==='mensuel'){
+    const occ=v.checkMonthlyOccurrence!==undefined?v.checkMonthlyOccurrence:'first';
+    const wd=v.checkMonthlyWeekday!==undefined?v.checkMonthlyWeekday:0;
+    const targetDate=monthlyOccurrenceDate(today,occ,wd);
+    if(today<targetDate){
+      return {due:false,label:'Prévu le '+fmtDate(targetDate)+' ('+MONTHLY_OCC_LABELS[occ]+' '+WEEKDAY_LABELS[wd]+' du mois)',lastDate:last?last.date:null};
+    }
+    const doneSince=last && last.date>=targetDate;
+    if(doneSince) return {due:false,label:'Vérifié le '+fmtDate(last.date),lastDate:last.date};
+    return {due:true,label: last?('Non fait depuis le '+fmtDate(targetDate)):'Jamais vérifié',lastDate:last?last.date:null};
   }
   // Hebdomadaire : due si aucune vérification n'a eu lieu CETTE semaine (lundi-dimanche) ET que le jour
   // programmé est déjà arrivé (pas de rappel avant le jour prévu).
@@ -1089,9 +1113,10 @@ function renderDashboard(){
         ${o2Total.ari!==null?`<div class="meta"><span>🫁 Air ARI disponible</span><span style="font-weight:700;">${o2Total.ari} L</span></div>`:''}
         ${s.overdue>0?`<div class="alert-line">⛔ ${s.overdue} échéance(s) dépassée(s)</div>`:''}
         ${s.soon>0?`<div class="alert-line">⚠ ${s.soon} échéance(s) sous 30 jours</div>`:''}
-        <div class="meta" style="margin-top:4px;align-items:center;"><select class="chip" style="border-radius:14px;font-size:10.5px;padding:4px 8px;" data-set-freq="${v.id}"><option value="quotidien" ${v.checkFrequency==='quotidien'?'selected':''}>Quotidienne</option><option value="hebdomadaire" ${v.checkFrequency!=='quotidien'?'selected':''}>Hebdomadaire</option></select><span style="color:${due.due?'var(--red-dark)':'var(--muted)'};font-weight:${due.due?'700':'400'};">${due.due?'⏰ à vérifier':due.label}</span></div>
+        <div class="meta" style="margin-top:4px;align-items:center;"><select class="chip" style="border-radius:14px;font-size:10.5px;padding:4px 8px;" data-set-freq="${v.id}"><option value="quotidien" ${v.checkFrequency==='quotidien'?'selected':''}>Quotidienne</option><option value="hebdomadaire" ${!v.checkFrequency||v.checkFrequency==='hebdomadaire'?'selected':''}>Hebdomadaire</option><option value="mensuel" ${v.checkFrequency==='mensuel'?'selected':''}>Mensuelle</option></select><span style="color:${due.due?'var(--red-dark)':'var(--muted)'};font-weight:${due.due?'700':'400'};">${due.due?'⏰ à vérifier':due.label}</span></div>
         ${techDueInfo(v).due?'<div class="alert-line">🔧 Vérification engin en retard</div>':''}
         ${techCheckAnomalies(v).length?`<div class="alert-line">🔧 ${techCheckAnomalies(v).length} point(s) signalé(s) sur l'engin</div>`:''}
+        ${v.emplacements.some(e=>e.articles.some(a=>a.dailyCheck)) && v.checkFrequency!=='quotidien' && !(v.dailyCheckHistory||[]).some(h=>h.date===todayStr()) ? '<div class="alert-line">☀ Contrôle de départ non fait aujourd\'hui</div>' : ''}
         ${wrongLocationCount(v)?`<div class="alert-line">📍 ${wrongLocationCount(v)} emplacement(s) signalé(s) comme incorrect(s)</div>`:''}
         <div class="card-actions">
           <button class="btn small primary" data-check="${v.id}">${isVehicleReadOnlyForMe(v)?'Consulter':'Vérifier'}</button>
@@ -2029,7 +2054,7 @@ function openReservePicker(v,empId,artId,subId){
   const{a,emp}=findArt(v,empId+':'+artId);
   const target=subId?a.sousArticles.find(s=>s.id===subId):a;
   const missing=target.qtyMissing||target.qty||1;
-  let cat=findBestReserveCat(target.name)||guessReserveCat(a);
+  let cat=findBestReserveCat(target.name)||(target.regType?guessReserveCat(target):guessReserveCat(a));
   const overlay=document.createElement('div'); overlay.className='overlay';
   const renderList=(c,filterText)=>{
     let items=(state.reserves[c]||[]).filter(it=>it.qty>0);
@@ -2635,8 +2660,13 @@ function openVehicleModal(existing){
     <div class="field"><label>N° inventaire</label><input id="mInv" value="${existing?escapeHtml(existing.invNumber||''):''}" placeholder="ex: INV-1234"></div>
     <label style="font-size:12.5px;display:flex;gap:6px;align-items:center;background:#fff8e6;padding:8px 10px;border-radius:4px;border:1px solid #f0dca0;"><input type="checkbox" id="mHasEngine" ${!existing||existing.hasEngine!==false?'checked':''}> Cet agrès est motorisé (moteur, propose une vérification engin)</label>
     <p style="font-size:11px;color:var(--muted);margin:2px 0 8px;">Décoche pour un lot/remorque sans moteur — la vérification engin ne sera plus proposée pour cet agrès.</p>
-    <div class="field"><label>Fréquence de vérification</label><select id="mFreq"><option value="quotidien" ${existing&&existing.checkFrequency==='quotidien'?'selected':''}>Quotidienne</option><option value="hebdomadaire" ${!existing||existing.checkFrequency==='hebdomadaire'?'selected':''}>Hebdomadaire</option></select></div>
-    <div class="field" id="mWeekdayField" style="display:${(!existing||existing.checkFrequency!=='quotidien')?'block':'none'};"><label>Jour de la semaine (si hebdomadaire)</label><select id="mWeekday">${WEEKDAY_LABELS.map((d,i)=>`<option value="${i}" ${existing&&existing.checkWeekday===i?'selected':''}>${d}</option>`).join('')}</select></div>
+    <div class="field"><label>Fréquence de vérification</label><select id="mFreq"><option value="quotidien" ${existing&&existing.checkFrequency==='quotidien'?'selected':''}>Quotidienne</option><option value="hebdomadaire" ${!existing||existing.checkFrequency==='hebdomadaire'?'selected':''}>Hebdomadaire</option><option value="mensuel" ${existing&&existing.checkFrequency==='mensuel'?'selected':''}>Mensuelle</option></select></div>
+    <div class="field" id="mWeekdayField" style="display:${existing&&existing.checkFrequency==='hebdomadaire'||!existing?'block':'none'};"><label>Jour de la semaine (si hebdomadaire)</label><select id="mWeekday">${WEEKDAY_LABELS.map((d,i)=>`<option value="${i}" ${existing&&existing.checkWeekday===i?'selected':''}>${d}</option>`).join('')}</select></div>
+    <div class="field-inline" id="mMonthlyField" style="display:${existing&&existing.checkFrequency==='mensuel'?'flex':'none'};">
+      <label>Occurrence</label><select id="mMonthlyOcc">${Object.keys(MONTHLY_OCC_LABELS).map(k=>`<option value="${k}" ${existing&&existing.checkMonthlyOccurrence===k?'selected':''}>${MONTHLY_OCC_LABELS[k]}</option>`).join('')}</select>
+      <label>Jour</label><select id="mMonthlyWeekday">${WEEKDAY_LABELS.map((d,i)=>`<option value="${i}" ${existing&&existing.checkMonthlyWeekday===i?'selected':''}>${d}</option>`).join('')}</select>
+      <span class="article-sub">du mois — ex: "1er Lundi", "dernier Jeudi"</span>
+    </div>
     <div id="mEngineFields" style="display:${!existing||existing.hasEngine!==false?'block':'none'};">
     <div class="field"><label>Fréquence — vérification engin (moteur, niveaux...)</label><select id="mTechFreq">
       <option value="hebdomadaire" ${!existing||existing.techCheckFrequency!=='mensuel'?'selected':''}>Hebdomadaire</option>
@@ -2661,6 +2691,7 @@ function openVehicleModal(existing){
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
   document.getElementById('mFreq').addEventListener('change',e=>{
     document.getElementById('mWeekdayField').style.display=e.target.value==='hebdomadaire'?'block':'none';
+    document.getElementById('mMonthlyField').style.display=e.target.value==='mensuel'?'flex':'none';
   });
   document.getElementById('mHasEngine').addEventListener('change',e=>{
     document.getElementById('mEngineFields').style.display=e.target.checked?'block':'none';
@@ -2678,6 +2709,8 @@ function openVehicleModal(existing){
     const amsec=document.getElementById('mAmsec').checked;
     const freq=document.getElementById('mFreq').value;
     const weekday=parseInt(document.getElementById('mWeekday').value)||0;
+    const monthlyOcc=document.getElementById('mMonthlyOcc').value;
+    const monthlyWeekday=parseInt(document.getElementById('mMonthlyWeekday').value)||0;
     const techFreq=document.getElementById('mTechFreq').value;
     const techWeekday=parseInt(document.getElementById('mTechWeekday').value)||0;
     const techOcc=document.getElementById('mTechOcc').value;
@@ -2689,11 +2722,13 @@ function openVehicleModal(existing){
     if(existing){
       existing.name=name;existing.cis=cis;existing.immat=immat;existing.invNumber=inv;existing.amsec=amsec;
       existing.checkFrequency=freq;existing.checkWeekday=weekday;
+      existing.checkMonthlyOccurrence=monthlyOcc;existing.checkMonthlyWeekday=monthlyWeekday;
       existing.techCheckFrequency=techFreq;existing.techCheckWeekday=techWeekday;
       existing.techCheckMonthlyOccurrence=techOcc;existing.techCheckMonthlyWeekday=techMonthlyWeekday;
       existing.fuelMinThreshold=fuelMin;existing.adblueMinThreshold=adblueMin;existing.hasAdblue=hasAdblue;existing.hasEngine=hasEngine;
     }
     else{state.vehicles.push({id:uid('v'),name,cis,immat,invNumber:inv,amsec,checkFrequency:freq,checkWeekday:weekday,
+      checkMonthlyOccurrence:monthlyOcc,checkMonthlyWeekday:monthlyWeekday,
       techCheckFrequency:techFreq,techCheckWeekday:techWeekday,techCheckMonthlyOccurrence:techOcc,techCheckMonthlyWeekday:techMonthlyWeekday,
       fuelMinThreshold:fuelMin,adblueMinThreshold:adblueMin,hasAdblue:hasAdblue,hasEngine:hasEngine,
       checkHistory:[],techCheck:defaultTechCheck(),emplacements:[]});}
@@ -2756,7 +2791,7 @@ function renderConfig(vehicleId){
       html+=`<div class="article-row" data-art="${a.id}">
         <div class="reorder-col"><button data-art-up="${emp.id}:${a.id}" ${ai===0?'disabled':''}>▲</button><button data-art-down="${emp.id}:${a.id}" ${ai===emp.articles.length-1?'disabled':''}>▼</button></div>
         <div>
-          <div class="article-name">${escapeHtml(a.name)} ${a.regType?`<span class="reg-badge">${REG_TYPES[a.regType]}</span>`:''}${o2Liters!==null?` <span class="tag">≈ ${o2Liters} ${gasLabel}</span>`:''}${a.wrongLocation?` <span class="reg-badge overdue">📍 Mauvais emplacement signalé</span> <button class="btn small primary" data-clear-wrong-loc="${emp.id}:${a.id}">✓ Corrigé</button>`:''}</div>
+          <div class="article-name"><input value="${escapeHtml(a.name)}" style="font-weight:700;font-size:13.5px;border:1px solid transparent;background:transparent;padding:2px 4px;width:auto;min-width:120px;" data-set-art-name="${emp.id}:${a.id}" onfocus="this.style.border='1px solid var(--line)';this.style.background='#fff';"> ${a.regType?`<span class="reg-badge">${REG_TYPES[a.regType]}</span>`:''}${o2Liters!==null?` <span class="tag">≈ ${o2Liters} ${gasLabel}</span>`:''}${a.wrongLocation?` <span class="reg-badge overdue">📍 Mauvais emplacement signalé</span> <button class="btn small primary" data-clear-wrong-loc="${emp.id}:${a.id}">✓ Corrigé</button>`:''} <button class="btn small ${a.dailyCheck?'primary':'ghost'}" title="Marquer/démarquer comme à vérifier tous les jours" data-toggle-daily="${emp.id}:${a.id}">☀ ${a.dailyCheck?'Tous les jours':'Marquer quotidien'}</button></div>
           <div class="article-sub">Qté ${a.qty}${a.lot?' · lot '+escapeHtml(a.lot):''}${a.invNum?' · n° '+escapeHtml(a.invNum):''}</div>
           <div class="field-inline">
             <label>Qté</label><input type="number" style="width:50px;" value="${a.qty}" data-set-qty="${emp.id}:${a.id}">
@@ -2783,11 +2818,20 @@ function renderConfig(vehicleId){
       if(hasChildren){
         html+=`<div class="sub-list">`;
         a.sousArticles.forEach((s,si)=>{
+          const sIsBottle=s.regType==='O2'||s.regType==='ARI';
           html+=`<div class="sub-row" data-sub="${s.id}" style="flex-wrap:wrap;">
-            <div>
+            <div style="display:flex;align-items:center;gap:4px;flex:1;min-width:200px;">
               <div class="reorder-col" style="display:inline-flex;flex-direction:row;gap:2px;"><button data-sub-up="${emp.id}:${a.id}:${s.id}" ${si===0?'disabled':''}>◀</button><button data-sub-down="${emp.id}:${a.id}:${s.id}" ${si===a.sousArticles.length-1?'disabled':''}>▶</button></div>
-              ${escapeHtml(s.name)} <span class="article-sub">(qté ${s.qty})</span>
+              <input value="${escapeHtml(s.name)}" style="font-size:12.5px;border:1px solid transparent;background:transparent;padding:2px 4px;flex:1;min-width:100px;" data-set-sub-name="${emp.id}:${a.id}:${s.id}" onfocus="this.style.border='1px solid var(--line)';this.style.background='#fff';">
+              <span class="article-sub">(qté ${s.qty})</span>
             </div>
+            <select style="font-size:11.5px;" data-set-sub-regtype="${emp.id}:${a.id}:${s.id}" title="Suivi réglementaire">${Object.keys(REG_TYPES).map(k=>`<option value="${k}" ${s.regType===k?'selected':''}>${REG_TYPES[k]}</option>`).join('')}</select>
+            ${sIsBottle?`<div class="field-inline" style="margin:0;">
+              <label>N°</label><input value="${escapeHtml(s.invNum||'')}" style="width:100px;" placeholder="numéro" data-set-sub-invnum="${emp.id}:${a.id}:${s.id}">
+              <label>Vol. (L)</label><input type="number" min="0" step="0.5" value="${s.volumeL||''}" style="width:60px;" data-set-sub-volume="${emp.id}:${a.id}:${s.id}">
+              <label>Pression (bar)</label><input type="number" min="0" value="${s.pressureBar||''}" style="width:65px;" data-set-sub-pressure="${emp.id}:${a.id}:${s.id}">
+              <button class="btn small ghost" data-pick-reserve-sub-any="${emp.id}:${a.id}:${s.id}">🔁 Depuis réserve</button>
+            </div>`:''}
             <div class="field-inline" style="margin:0;"><label>Péremption</label><input type="date" value="${s.expiry||''}" style="width:130px;" data-set-sub-expiry="${emp.id}:${a.id}:${s.id}"></div>
             <button class="del-btn" data-sub-del="${emp.id}:${a.id}:${s.id}">✕</button>
           </div>`;
@@ -2955,6 +2999,35 @@ function bindConfigEvents(v){
     const[empId,artId,subId]=el.dataset.setSubExpiry.split(':'); const{a}=findArt(v,empId+':'+artId);
     const sub=a.sousArticles.find(s=>s.id===subId); sub.expiry=el.value; await saveState(); render();
   }));
+  app.querySelectorAll('[data-set-art-name]').forEach(el=>el.addEventListener('change',async()=>{
+    const{a}=findArt(v,el.dataset.setArtName); const n=el.value.trim(); if(!n)return; a.name=n; await saveState(); render();
+  }));
+  app.querySelectorAll('[data-toggle-daily]').forEach(el=>el.addEventListener('click',async()=>{
+    const{a}=findArt(v,el.dataset.toggleDaily); a.dailyCheck=!a.dailyCheck; await saveState(); render();
+  }));
+  app.querySelectorAll('[data-set-sub-name]').forEach(el=>el.addEventListener('change',async()=>{
+    const[empId,artId,subId]=el.dataset.setSubName.split(':'); const{a}=findArt(v,empId+':'+artId);
+    const sub=a.sousArticles.find(s=>s.id===subId); const n=el.value.trim(); if(!n)return; sub.name=n; await saveState(); render();
+  }));
+  app.querySelectorAll('[data-set-sub-regtype]').forEach(el=>el.addEventListener('change',async()=>{
+    const[empId,artId,subId]=el.dataset.setSubRegtype.split(':'); const{a}=findArt(v,empId+':'+artId);
+    const sub=a.sousArticles.find(s=>s.id===subId); sub.regType=el.value; await saveState(); render();
+  }));
+  app.querySelectorAll('[data-set-sub-invnum]').forEach(el=>el.addEventListener('change',async()=>{
+    const[empId,artId,subId]=el.dataset.setSubInvnum.split(':'); const{a}=findArt(v,empId+':'+artId);
+    const sub=a.sousArticles.find(s=>s.id===subId); sub.invNum=el.value.trim(); await saveState();
+  }));
+  app.querySelectorAll('[data-set-sub-volume]').forEach(el=>el.addEventListener('change',async()=>{
+    const[empId,artId,subId]=el.dataset.setSubVolume.split(':'); const{a}=findArt(v,empId+':'+artId);
+    const sub=a.sousArticles.find(s=>s.id===subId); sub.volumeL=el.value; await saveState();
+  }));
+  app.querySelectorAll('[data-set-sub-pressure]').forEach(el=>el.addEventListener('change',async()=>{
+    const[empId,artId,subId]=el.dataset.setSubPressure.split(':'); const{a}=findArt(v,empId+':'+artId);
+    const sub=a.sousArticles.find(s=>s.id===subId); sub.pressureBar=el.value; await saveState();
+  }));
+  app.querySelectorAll('[data-pick-reserve-sub-any]').forEach(el=>el.addEventListener('click',()=>{
+    const[empId,artId,subId]=el.dataset.pickReserveSubAny.split(':'); openReservePicker(v,empId,artId,subId);
+  }));
 }
 function findArt(v,key){const[empId,artId]=key.split(':');const emp=v.emplacements.find(e=>e.id===empId);const a=emp.articles.find(x=>x.id===artId);return{emp,a};}
 function moveInArray(arr,id,dir){
@@ -3040,6 +3113,17 @@ function isFullyChecked(v){
   }
   return true;
 }
+function vehicleStatsDaily(v){
+  let total=0,ok=0;
+  v.emplacements.forEach(e=>{
+    e.articles.forEach(a=>{
+      if(!a.dailyCheck) return;
+      articleAllStatuses(a).forEach(st=>{ total++; if(st==='ok') ok++; });
+    });
+  });
+  const pct=total?Math.round((ok/total)*100):100;
+  return {total,ok,pct};
+}
 async function closeVehicleCheck(v){
   const st=vehicleStats(v);
   v.checkHistory=v.checkHistory||[];
@@ -3052,6 +3136,15 @@ async function closeVehicleCheck(v){
   // Une fois clôturé : ne laisser ouverts que les emplacements qui ont encore une anomalie, replier le reste.
   const remaining=buildAnomaliesList(v);
   checkOpenEmps = remaining.length ? new Set(remaining.map(x=>x.empId)) : new Set();
+  return st;
+}
+async function closeDailyCheck(v){
+  const st=vehicleStatsDaily(v);
+  v.dailyCheckHistory=v.dailyCheckHistory||[];
+  v.dailyCheckHistory.push({date:todayStr(),pct:st.pct,checkedBy:currentCheckerLabel()});
+  if(v.dailyCheckHistory.length>50) v.dailyCheckHistory=v.dailyCheckHistory.slice(-50);
+  await saveState();
+  checkerNames=[]; activeCheckContext=null; await saveCheckers(); updateCheckerPill();
   return st;
 }
 function maybeOfferClosure(v){
@@ -3088,6 +3181,8 @@ function renderCheck(vehicleId){
   const s=vehicleStats(v);
   const anomalies=buildAnomaliesList(v);
   const readOnly=isVehicleReadOnlyForMe(v);
+  const hasDailyItems = v.emplacements.some(e=>e.articles.some(a=>a.dailyCheck));
+  const mode = (hasDailyItems && v.checkFrequency!=='quotidien' && currentView.mode==='daily') ? 'daily' : 'full';
   if(checkOpenEmps===null){
     // Par défaut, tout est déplié — le bouton "Tout replier" reste disponible pour tout fermer d'un coup.
     checkOpenEmps = new Set(v.emplacements.map(e=>e.id));
@@ -3099,7 +3194,7 @@ function renderCheck(vehicleId){
       ${readOnly?'':'<button class="btn primary small" id="voiceModeBtn">🎤 Mode vocal</button>'}
       ${v.hasEngine===false?'':'<button class="btn ghost small" id="toTechTab">Vérification engin</button>'}
       <div class="actions-dropdown"><button type="button" class="dropdown-toggle">⋯ Plus</button><div class="dropdown-panel">
-        ${readOnly?'':'<button class="btn ghost small" id="voiceSettingsBtn">🔊 Voix</button><button class="btn ghost small" id="interventionBtn">🚑 Retour d\'intervention</button><button class="btn ghost small" id="closeCheckBtn">✓ Clôturer la vérification</button>'}
+        ${readOnly?'':'<button class="btn ghost small" id="voiceSettingsBtn">🔊 Voix</button><button class="btn ghost small" id="interventionBtn">🚑 Retour d\'intervention</button><button class="btn ghost small" id="closeCheckBtn">✓ Clôturer '+(mode==='daily'?'le contrôle de départ':'la vérification')+'</button>'}
         <button class="btn ghost small" id="orderBtn">🛒 Commande</button>
         ${readOnly?'':'<button class="btn ghost small" id="toConfigTab">Configurer</button>'}
         <button class="btn ghost small" id="printCheckBtn">🖨 Imprimer</button>
@@ -3108,16 +3203,24 @@ function renderCheck(vehicleId){
   </div>
   ${v.outOfService?`<div class="comment-text" style="background:#fdecec;border-color:var(--red-dark);color:var(--red-dark);margin-bottom:12px;"><b>🚨 Engin indisponible</b> — actuellement à : <b>${escapeHtml(v.outOfServiceInfo.dest)}</b>${v.outOfServiceInfo.motif?' — '+escapeHtml(v.outOfServiceInfo.motif):''}${v.outOfServiceInfo.dateRetourPrevue?' · retour prévu le '+fmtDate(v.outOfServiceInfo.dateRetourPrevue):''}</div>`:''}
   ${readOnly?`<div class="comment-text" style="background:#eef2f6;border-color:var(--steel);color:var(--navy);margin-bottom:12px;"><b>🔒 Lecture seule</b> — cet engin est actuellement géré par <b>${escapeHtml(v.currentCis)}</b> (prêt en cours). Tu peux consulter l'inventaire et l'historique, mais les vérifications se font désormais côté centre receveur.</div>`:''}
+  ${hasDailyItems && v.checkFrequency!=='quotidien' ? `<div class="mode-tabs">
+    <div class="mode-tab ${mode==='full'?'active':''}" id="viewModeFull">📋 Inventaire complet</div>
+    <div class="mode-tab ${mode==='daily'?'active':''}" id="viewModeDaily">☀ Contrôle de départ (quotidien)</div>
+  </div>` : ''}
+  ${mode==='daily'?`<div class="comment-text" style="background:#fff8e6;border-color:#f0dca0;color:var(--amber-dark);margin-bottom:12px;"><b>☀ Contrôle de départ</b> — seuls les items marqués "à vérifier tous les jours" sont affichés ici. L'inventaire complet reste dû selon la fréquence habituelle (${FREQ_LABELS[v.checkFrequency||'hebdomadaire']}).</div>`:''}
   <div class="meta" style="margin-bottom:10px;"><span class="tag">Fréquence : ${FREQ_LABELS[v.checkFrequency||'hebdomadaire']}</span><span>${checkDueInfo(v).label}</span>
     <button class="btn ghost small" id="expandAllBtn" style="margin-left:auto;">Tout déplier</button>
     <button class="btn ghost small" id="collapseAllBtn">Tout replier</button>
   </div>`;
 
-  if(anomalies.length){
+  const filteredAnomalies = mode==='daily' ? anomalies.filter(an=>{
+    const{a}=findArt(v,an.empId+':'+an.artId); return a && a.dailyCheck;
+  }) : anomalies;
+  if(filteredAnomalies.length){
     html+=`<div class="emp-block" style="border-color:var(--red);border-left:4px solid var(--red);">
-      <div class="emp-head" style="background:#fdecec;"><span class="name" style="color:var(--red-dark);">⚠ À traiter (${anomalies.length})</span></div>
+      <div class="emp-head" style="background:#fdecec;"><span class="name" style="color:var(--red-dark);">⚠ À traiter (${filteredAnomalies.length})</span></div>
       <div class="emp-body">`;
-    anomalies.forEach(an=>{
+    filteredAnomalies.forEach(an=>{
       html+=`<div class="article-row" style="grid-template-columns:1fr 120px;">
         <div style="font-size:12.5px;">${escapeHtml(an.label)} — <b>${escapeHtml(an.statusLabel)}</b></div>
         ${readOnly?'':`<button class="btn small ghost" data-anomaly-pick="${an.empId}:${an.artId}:${an.subId||''}">🔁 Remplacer</button>`}
@@ -3125,7 +3228,6 @@ function renderCheck(vehicleId){
     });
     html+=`</div></div>`;
   }
-  html+=`<div class="mode-tabs"><div class="mode-tab active">Vérification matériel</div></div>`;
   html+=`<div class="tech-block" style="padding:12px 14px;margin-bottom:14px;background:#fff8e6;border:1px solid #f0dca0;">
     ${v.hasEngine===false?'':`<div style="font-family:var(--font-head);font-size:13px;color:var(--amber-dark);margin-bottom:10px;">⛽ Niveaux (à vérifier chaque jour, même hors vérification engin complète)</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;">
@@ -3145,6 +3247,7 @@ function renderCheck(vehicleId){
   </div>`;
 
   v.emplacements.forEach(emp=>{
+    if(mode==='daily' && !emp.articles.some(a=>a.dailyCheck)) return;
     const es=empStats(emp);
     const isOpen=checkOpenEmps.has(emp.id);
     html+=`<div class="check-emp">
@@ -3152,13 +3255,14 @@ function renderCheck(vehicleId){
     if(isOpen){
       if((emp.photos||[]).length){html+=`<div class="check-emp-photos">${emp.photos.map(p=>`<img src="${p}" style="cursor:pointer;" onclick="openPhotoLightbox(this.src)">`).join('')}</div>`;}
       emp.articles.forEach(a=>{
+        if(mode==='daily' && !a.dailyCheck) return;
         const hasChildren=isContainerArt(a);
         const isBottle=a.regType==='O2'||a.regType==='ARI';
         const o2Liters=isBottle && a.volumeL && a.pressureBar ? Math.round(parseFloat(a.volumeL)*parseFloat(a.pressureBar)) : null;
         const gasLabel=a.regType==='ARI'?'L air':'L O2';
         const dis=readOnly?' disabled':'';
         html+=`<div class="check-article">
-          <div class="check-article-name">${escapeHtml(a.name)} <span class="article-sub">(qté ${a.qty})</span> ${a.regType?`<span class="reg-badge ${isSoonOrOverdue(a.regDueDate)==='overdue'?'overdue':(isSoonOrOverdue(a.regDueDate)==='soon'?'soon':'')}">${REG_TYPES[a.regType]}${a.regDueDate?' — '+fmtDate(a.regDueDate):''}</span>`:''}${a.wrongLocation?' <span class="reg-badge overdue">📍 Mauvais emplacement signalé</span>':''}
+          <div class="check-article-name">${escapeHtml(a.name)} <span class="article-sub">(qté ${a.qty})</span> ${a.regType?`<span class="reg-badge ${isSoonOrOverdue(a.regDueDate)==='overdue'?'overdue':(isSoonOrOverdue(a.regDueDate)==='soon'?'soon':'')}">${REG_TYPES[a.regType]}${a.regDueDate?' — '+fmtDate(a.regDueDate):''}</span>`:''}${a.wrongLocation?' <span class="reg-badge overdue">📍 Mauvais emplacement signalé</span>':''}${a.dailyCheck?' <span class="tag">☀ Quotidien</span>':''}
             <button class="comment-btn ${a.comments&&a.comments.length?'has-comment':''}"${dis} title="Ajouter un commentaire" data-comment-art="${emp.id}:${a.id}">💬</button>
             <button class="comment-btn ${a.wrongLocation?'has-comment':''}"${dis} title="${a.wrongLocation?'Retirer le signalement':'Signaler un mauvais emplacement'}" data-wrong-loc-art="${emp.id}:${a.id}">📍</button>
           </div>
@@ -3171,7 +3275,11 @@ function renderCheck(vehicleId){
             html+=`<div class="check-sub-list">`;
             a.sousArticles.forEach(sub=>{
               const subReg=isSoonOrOverdue(sub.expiry);
-              html+=`<div class="check-sub-row"><span>${escapeHtml(sub.name)} <span class="article-sub">(qté ${sub.qty})</span> ${sub.expiry?`<span class="reg-badge ${subReg==='overdue'?'overdue':(subReg==='soon'?'soon':'')}">Péremption ${fmtDate(sub.expiry)}</span>`:''}${sub.wrongLocation?' <span class="reg-badge overdue">📍 Mauvais emplacement</span>':''} <button class="comment-btn ${sub.comments&&sub.comments.length?'has-comment':''}"${dis} title="Ajouter un commentaire" data-comment-sub="${emp.id}:${a.id}:${sub.id}">💬</button> <button class="comment-btn ${sub.wrongLocation?'has-comment':''}"${dis} title="${sub.wrongLocation?'Retirer le signalement':'Signaler un mauvais emplacement'}" data-wrong-loc-sub="${emp.id}:${a.id}:${sub.id}">📍</button> <button class="comment-btn ${sub.expiry?'has-comment':''}"${dis} title="${sub.expiry?'Modifier la péremption':'Ajouter une péremption (si applicable)'}" data-set-sub-expiry-btn="${emp.id}:${a.id}:${sub.id}">📅</button></span>
+              const subIsBottle=sub.regType==='O2'||sub.regType==='ARI';
+              const subO2Liters=subIsBottle && sub.volumeL && sub.pressureBar ? Math.round(parseFloat(sub.volumeL)*parseFloat(sub.pressureBar)) : null;
+              const subGasLabel=sub.regType==='ARI'?'L air':'L O2';
+              html+=`<div class="check-sub-row"><span>${escapeHtml(sub.name)} <span class="article-sub">(qté ${sub.qty})</span> ${sub.regType?`<span class="reg-badge">${REG_TYPES[sub.regType]}</span>`:''} ${sub.expiry?`<span class="reg-badge ${subReg==='overdue'?'overdue':(subReg==='soon'?'soon':'')}">Péremption ${fmtDate(sub.expiry)}</span>`:''}${sub.wrongLocation?' <span class="reg-badge overdue">📍 Mauvais emplacement</span>':''} <button class="comment-btn ${sub.comments&&sub.comments.length?'has-comment':''}"${dis} title="Ajouter un commentaire" data-comment-sub="${emp.id}:${a.id}:${sub.id}">💬</button> <button class="comment-btn ${sub.wrongLocation?'has-comment':''}"${dis} title="${sub.wrongLocation?'Retirer le signalement':'Signaler un mauvais emplacement'}" data-wrong-loc-sub="${emp.id}:${a.id}:${sub.id}">📍</button> ${subIsBottle?'':`<button class="comment-btn ${sub.expiry?'has-comment':''}"${dis} title="${sub.expiry?'Modifier la péremption':'Ajouter une péremption (si applicable)'}" data-set-sub-expiry-btn="${emp.id}:${a.id}:${sub.id}">📅</button>`}</span>
+                ${subIsBottle?`<div class="field-inline" style="margin-top:0;width:100%;"><label>N° bouteille</label><input value="${escapeHtml(sub.invNum||'')}"${dis} style="width:120px;" placeholder="numéro" data-set-check-subbottle-num="${emp.id}:${a.id}:${sub.id}"><label>Pression (bar)</label><input type="number" min="0"${dis} style="width:65px;" value="${sub.pressureBar||''}" data-set-check-subbottle-pres="${emp.id}:${a.id}:${sub.id}">${sub.volumeL?`<span class="article-sub">× ${sub.volumeL} L</span>`:''}${subO2Liters!==null?`<span class="tag">≈ ${subO2Liters} ${subGasLabel} disponible</span>`:''}${readOnly?'':`<button class="btn small ghost" data-pick-reserve-sub-any="${emp.id}:${a.id}:${sub.id}">🔁 Changer depuis réserve</button>`}</div>`:''}
                 <div class="check-status-buttons check-sub-status-buttons">
                 ${Object.keys(STATUS).map(k=>`<button class="check-status-btn ${sub.status===k?'active '+k:''}"${dis} data-set-sub-status="${emp.id}:${a.id}:${sub.id}:${k}">${STATUS[k].short}</button>`).join('')}
                 </div></div>
@@ -3229,16 +3337,20 @@ function renderCheck(vehicleId){
   document.getElementById('collapseAllBtn').addEventListener('click',()=>{checkOpenEmps=new Set(); render();});
   const closeBtn=document.getElementById('closeCheckBtn');
   if(closeBtn) closeBtn.addEventListener('click',async()=>{
-    const st=await closeVehicleCheck(v);
+    const st= mode==='daily' ? await closeDailyCheck(v) : await closeVehicleCheck(v);
     render();
-    alert('Vérification clôturée pour aujourd\'hui ('+st.pct+'% conforme).');
+    alert((mode==='daily'?'Contrôle de départ clôturé':'Vérification clôturée')+' pour aujourd\'hui ('+st.pct+'% conforme).');
   });
   const closeBtnFloat=document.getElementById('closeCheckBtnFloat');
   if(closeBtnFloat) closeBtnFloat.addEventListener('click',async()=>{
-    const st=await closeVehicleCheck(v);
+    const st= mode==='daily' ? await closeDailyCheck(v) : await closeVehicleCheck(v);
     render();
-    alert('Vérification clôturée pour aujourd\'hui ('+st.pct+'% conforme).');
+    alert((mode==='daily'?'Contrôle de départ clôturé':'Vérification clôturée')+' pour aujourd\'hui ('+st.pct+'% conforme).');
   });
+  const vmFull=document.getElementById('viewModeFull');
+  if(vmFull) vmFull.addEventListener('click',()=>{ currentView={type:'check',vehicleId:v.id,mode:'full'}; render(); });
+  const vmDaily=document.getElementById('viewModeDaily');
+  if(vmDaily) vmDaily.addEventListener('click',()=>{ currentView={type:'check',vehicleId:v.id,mode:'daily'}; render(); });
   app.querySelectorAll('[data-pick-reserve-art]').forEach(el=>el.addEventListener('click',()=>{
     const[empId,artId]=el.dataset.pickReserveArt.split(':'); openReservePicker(v,empId,artId,null);
   }));
@@ -3267,6 +3379,17 @@ function renderCheck(vehicleId){
   }));
   app.querySelectorAll('[data-set-check-o2num]').forEach(el=>el.addEventListener('change',async()=>{
     const{a}=findArt(v,el.dataset.setCheckO2num); a.invNum=el.value; await saveState(); render();
+  }));
+  app.querySelectorAll('[data-set-check-subbottle-num]').forEach(el=>el.addEventListener('change',async()=>{
+    const[empId,artId,subId]=el.dataset.setCheckSubbottleNum.split(':'); const{a}=findArt(v,empId+':'+artId);
+    const sub=a.sousArticles.find(s=>s.id===subId); sub.invNum=el.value; await saveState(); render();
+  }));
+  app.querySelectorAll('[data-set-check-subbottle-pres]').forEach(el=>el.addEventListener('change',async()=>{
+    const[empId,artId,subId]=el.dataset.setCheckSubbottlePres.split(':'); const{a}=findArt(v,empId+':'+artId);
+    const sub=a.sousArticles.find(s=>s.id===subId); sub.pressureBar=el.value; await saveState(); render();
+  }));
+  app.querySelectorAll('[data-pick-reserve-sub-any]').forEach(el=>el.addEventListener('click',()=>{
+    const[empId,artId,subId]=el.dataset.pickReserveSubAny.split(':'); openReservePicker(v,empId,artId,subId);
   }));
   app.querySelectorAll('[data-set-check-o2pres]').forEach(el=>el.addEventListener('change',async()=>{
     const{a}=findArt(v,el.dataset.setCheckO2pres); a.pressureBar=el.value; await saveState(); render();
