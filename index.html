@@ -108,6 +108,18 @@ input,select,textarea{font-family:var(--font-body);}
 .sync-status.error{background:var(--red);animation:pillPulse 1.6s infinite;}
 .fab-close{position:fixed;bottom:20px;right:20px;z-index:55;background:var(--green);color:#fff;border:none;border-radius:30px;padding:14px 22px;font-size:14px;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer;}
 .fab-close:hover{background:var(--green-dark);}
+/* Menu deroulant reutilisable : boutons affiches en ligne sur desktop, repliés sous "..." sur mobile — sans JS supplémentaire. */
+.actions-dropdown{display:contents;}
+.actions-dropdown>summary{display:none;list-style:none;}
+.actions-dropdown>summary::-webkit-details-marker{display:none;}
+.actions-dropdown .dropdown-panel{display:contents;}
+@media (max-width:700px){
+  .actions-dropdown{display:inline-block;position:relative;}
+  .actions-dropdown>summary{display:inline-flex;align-items:center;gap:4px;cursor:pointer;background:var(--navy-3);color:#fff;padding:8px 14px;border-radius:20px;font-size:12.5px;font-weight:600;}
+  .actions-dropdown[open]>summary{background:var(--steel);}
+  .actions-dropdown .dropdown-panel{display:flex;flex-direction:column;gap:6px;position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:1px solid var(--line);border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,.2);padding:10px;min-width:210px;z-index:70;}
+  .actions-dropdown .dropdown-panel .btn{width:100%;text-align:left;}
+}
 @keyframes pillPulse{0%{box-shadow:0 0 0 0 rgba(194,42,42,.6);}70%{box-shadow:0 0 0 8px rgba(194,42,42,0);}100%{box-shadow:0 0 0 0 rgba(194,42,42,0);}}
 
 .btn{padding:8px 14px;font-size:12.5px;font-weight:600;background:var(--navy-3);color:#fff;}
@@ -150,8 +162,6 @@ input,select,textarea{font-family:var(--font-body);}
 .card .meta{display:flex;justify-content:space-between;margin-top:8px;font-size:10.5px;color:var(--muted);}
 .card .alert-line{margin-top:7px;font-size:11px;color:var(--red-dark);font-weight:600;}
 .card .card-actions{display:flex;gap:5px;margin-top:10px;flex-wrap:wrap;}
-@media (max-width:700px){.card .card-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));}
-  .card .card-actions .btn{width:100%;text-align:center;}}
 .card .qr-mini{margin-top:8px;display:flex;justify-content:center;}
 .empty-state{text-align:center;padding:50px 20px;color:var(--muted);}
 
@@ -162,8 +172,6 @@ input,select,textarea{font-family:var(--font-body);}
 .detail-title h2{font-family:var(--font-head);font-size:23px;color:var(--navy);margin:0 0 2px;}
 .detail-title .code{font-family:var(--font-mono);color:var(--muted);font-size:12px;}
 .detail-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
-@media (max-width:700px){.detail-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));justify-content:stretch;}
-  .detail-actions .btn{width:100%;text-align:center;}}
 .mode-tabs{display:flex;gap:6px;margin:14px 0 18px;}
 .mode-tab{padding:8px 16px;font-size:12.5px;font-weight:700;border:1px solid var(--line);background:#fff;color:var(--muted);border-radius:20px;}
 .mode-tab.active{background:var(--navy);color:#fff;border-color:var(--navy);}
@@ -222,8 +230,9 @@ input,select,textarea{font-family:var(--font-body);}
 .check-emp-photos img{width:80px;height:80px;object-fit:cover;border-radius:4px;flex-shrink:0;}
 .check-article{padding:12px 14px;border-top:1px solid var(--line);}
 .check-article-name{font-weight:700;font-size:14px;margin-bottom:8px;display:flex;align-items:center;flex-wrap:wrap;gap:6px;}
-.check-status-buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(64px,1fr));gap:6px;}
-.check-status-btn{flex:1;min-width:70px;padding:11px 8px;font-size:11.5px;font-weight:700;border-radius:5px;border:1px solid var(--line);background:#fff;color:var(--muted);text-transform:uppercase;}
+.check-status-buttons{display:flex;gap:4px;flex-wrap:nowrap;overflow-x:auto;}
+.check-status-btn{flex:1 1 0;min-width:0;padding:11px 4px;font-size:10.5px;font-weight:700;border-radius:5px;border:1px solid var(--line);background:#fff;color:var(--muted);text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+@media (max-width:420px){.check-status-btn{padding:9px 2px;font-size:9px;}}
 body.big-buttons .check-status-btn{padding:20px 10px;font-size:15px;min-width:90px;}
 body.big-buttons .check-lock-btn{padding:22px;font-size:18px;}
 body.big-buttons .comment-btn{font-size:22px;padding:8px 10px;}
@@ -311,11 +320,14 @@ body.big-buttons .btn.small{padding:11px 16px;font-size:13.5px;}
   </div>
   <div class="actions">
     <div class="checker-pill" id="checkerPill">Vérifié par : —</div>
-    <div class="checker-pill" id="myCentrePill" style="background:var(--navy-3);">🏠 Mon centre : —</div>
     <div id="syncStatus" class="sync-status ok">💾 Enregistré</div>
-    <button class="checker-pill" id="bigButtonsToggle" style="background:var(--navy-3);">🧤 Gros boutons</button>
-    <button class="btn ghost" id="importBtn">Importer</button>
-    <button class="btn primary" id="addVehicleBtn">+ Véhicule</button>
+    <details class="actions-dropdown"><summary>⋯ Plus</summary><div class="dropdown-panel">
+      <div class="checker-pill" id="myCentrePill" style="background:var(--navy-3);">🏠 Mon centre : —</div>
+      <button class="checker-pill" id="bigButtonsToggle" style="background:var(--navy-3);">🧤 Gros boutons</button>
+      <button class="checker-pill" id="helpBtn" style="background:var(--navy-3);">❓ Aide</button>
+      <button class="btn ghost" id="importBtn">Importer</button>
+      <button class="btn primary" id="addVehicleBtn">+ Véhicule</button>
+    </div></details>
   </div>
 </div>
 
@@ -680,6 +692,7 @@ function openMyCentreModal(){
   });
 }
 myCentrePill.addEventListener('click',openMyCentreModal);
+document.getElementById('helpBtn').addEventListener('click',()=>{currentView={type:'help',tab:'tuto'};render();});
 
 document.getElementById('addVehicleBtn').addEventListener('click',()=>requireAdmin(()=>openVehicleModal()));
 document.getElementById('importBtn').addEventListener('click',()=>openImportModal());
@@ -748,6 +761,7 @@ function render(){
   else if(currentView.type==='daily')renderDaily(currentView.date);
   else if(currentView.type==='repairs')renderRepairs();
   else if(currentView.type==='hospitalTracking')renderHospitalTracking();
+  else if(currentView.type==='help')renderHelp(currentView.tab);
 }
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
@@ -921,8 +935,18 @@ function renderDashboard(){
   let totalItems=0,ok=0,warn=0,bad=0;
   state.vehicles.forEach(v=>{const s=vehicleStats(v);totalItems+=s.total;ok+=s.ok;warn+=s.verifier;bad+=s.manquant+s.perime+s.hs;});
   let html=`
-    <div class="dash-header"><div><h2>Tableau de bord</h2><p class="big">Parc du centre</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;"><button class="btn ghost" id="globalSearchBtn">🔍 Recherche globale</button><button class="btn ghost" id="dailyRecapBtn">📋 Récap du jour</button><button class="btn ghost" id="repairsBtn">🔧 Suivi réparations${state.repairs.filter(r=>!r.returned).length?' ('+state.repairs.filter(r=>!r.returned).length+')':''}</button><button class="btn ghost" id="hospitalTrackingBtn">🏥 Suivi matériel en CH${state.hospitalTracking.filter(h=>!h.returned).length?' ('+state.hospitalTracking.filter(h=>!h.returned).length+')':''}</button><button class="btn ghost" id="securityBtn">${state.adminPasswordHash?'🔒':'🔓'} Sécurité</button></div></div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-bottom:16px;"><button class="btn ghost small" id="dupBtn">🔍 Détecter les doublons</button><button class="btn ghost small" id="exportBackupBtn">💾 Sauvegarder tout</button><button class="btn ghost small" id="restoreBackupBtn">📤 Restaurer une sauvegarde</button></div>
+    <div class="dash-header"><div><h2>Tableau de bord</h2><p class="big">Parc du centre</p></div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center;">
+      <button class="btn ghost" id="globalSearchBtn">🔍 Recherche globale</button>
+      <details class="actions-dropdown"><summary>⋯ Plus</summary><div class="dropdown-panel">
+        <button class="btn ghost" id="dailyRecapBtn">📋 Récap du jour</button>
+        <button class="btn ghost" id="repairsBtn">🔧 Suivi réparations${state.repairs.filter(r=>!r.returned).length?' ('+state.repairs.filter(r=>!r.returned).length+')':''}</button>
+        <button class="btn ghost" id="hospitalTrackingBtn">🏥 Suivi matériel en CH${state.hospitalTracking.filter(h=>!h.returned).length?' ('+state.hospitalTracking.filter(h=>!h.returned).length+')':''}</button>
+        <button class="btn ghost" id="securityBtn">${state.adminPasswordHash?'🔒':'🔓'} Sécurité</button>
+        <button class="btn ghost small" id="dupBtn">🔍 Détecter les doublons</button>
+        <button class="btn ghost small" id="exportBackupBtn">💾 Sauvegarder tout</button>
+        <button class="btn ghost small" id="restoreBackupBtn">📤 Restaurer une sauvegarde</button>
+      </div></details>
+    </div></div>
     <div class="summary-strip">
       <div class="summary-cell total"><div class="n">${totalItems}</div><div class="l">Items suivis</div></div>
       <div class="summary-cell ok"><div class="n">${ok}</div><div class="l">Conformes</div></div>
@@ -2231,6 +2255,139 @@ function openRepairsView(){
 }
 /* ---------- Suivi matériel laissé en centre hospitalier ---------- */
 function openHospitalTrackingView(){ currentView={type:'hospitalTracking'}; render(); }
+/* ---------- Aide (tutoriel + FAQ) ---------- */
+function renderHelp(tab){
+  tab=tab||'tuto';
+  let html=`<div class="back-link" id="backLink">← Retour au tableau de bord</div>
+  <div class="detail-header"><div class="detail-title"><h2>❓ Aide</h2><div class="code">Tutoriel et questions fréquentes</div></div></div>
+  <div class="mode-tabs">
+    <div class="mode-tab ${tab==='tuto'?'active':''}" id="helpTabTuto">📖 Tutoriel</div>
+    <div class="mode-tab ${tab==='faq'?'active':''}" id="helpTabFaq">💬 FAQ</div>
+  </div>`;
+
+  if(tab==='tuto'){
+    html+=helpTutoContent();
+  } else {
+    html+=helpFaqContent();
+  }
+
+  app.innerHTML=html;
+  document.getElementById('backLink').addEventListener('click',()=>{currentView={type:'dashboard'};render();});
+  document.getElementById('helpTabTuto').addEventListener('click',()=>{currentView={type:'help',tab:'tuto'};render();});
+  document.getElementById('helpTabFaq').addEventListener('click',()=>{currentView={type:'help',tab:'faq'};render();});
+}
+function helpSection(title,bodyHtml){
+  return `<div class="tech-block"><h4>${title}</h4>${bodyHtml}</div>`;
+}
+function helpTutoContent(){
+  return `
+  ${helpSection('1. Premiers pas',`
+    <p style="font-size:13px;">En haut de l'écran, deux pastilles sont importantes :</p>
+    <ul style="font-size:12.5px;line-height:1.7;">
+      <li><b>🏠 Mon centre</b> — indique de quel centre dépend cet appareil. Sert surtout si des engins sont prêtés entre centres.</li>
+      <li><b>👤 Vérifié par</b> (ou "⚠ Indiquer qui vérifie" si vide, en rouge) — le ou les noms des agents qui font la vérification en cours. L'appli la redemande automatiquement dès que tu changes de véhicule ou que tu passes du matériel à l'engin.</li>
+    </ul>
+  `)}
+  ${helpSection('2. Vérifier le matériel d\'un véhicule au quotidien',`
+    <p style="font-size:13px;">Depuis le tableau de bord, clique <b>"Vérifier"</b> sur la carte du véhicule.</p>
+    <ul style="font-size:12.5px;line-height:1.7;">
+      <li>Les emplacements avec une anomalie s'ouvrent automatiquement ; les autres restent repliés (clique sur leur titre pour les ouvrir).</li>
+      <li>Pour chaque article : <b>OK</b> / <b>VÉRIF.</b> / <b>MANQ.</b> / <b>PÉRIMÉ</b> / <b>H.S.</b></li>
+      <li>Pour un tiroir ou un sac plombé : un seul bouton "Marquer complet" valide tout son contenu d'un coup. Décoché, chaque sous-article redevient contrôlable individuellement — sans jamais perdre le contenu.</li>
+      <li>Un article manquant/périmé/HS fait apparaître <b>"🔁 Piocher en réserve"</b> (remplacer depuis le stock) et <b>"🔧 Envoyer en réparation"</b>.</li>
+      <li>Le bandeau rouge <b>"⚠ À traiter"</b> en haut regroupe tous les problèmes en cours, sans avoir à parcourir tout l'inventaire.</li>
+      <li>Le bouton <b>"✓ Clôturer"</b> (aussi disponible flottant en bas de l'écran) valide la vérification du jour. Une fois <b>tous</b> les items traités, l'appli te propose automatiquement de clôturer.</li>
+      <li>La jauge ⛽ carburant (et 🧪 AdBlue si le véhicule en est équipé) est directement modifiable ici, sans passer par la vérification engin complète.</li>
+    </ul>
+  `)}
+  ${helpSection('3. Vérifier l\'engin (moteur, carrosserie...)',`
+    <p style="font-size:13px;">Bouton <b>"Vérification engin"</b> depuis la fiche du véhicule.</p>
+    <ul style="font-size:12.5px;line-height:1.7;">
+      <li><b>Les cases cochées = conforme.</b> Décoche uniquement ce qui pose problème (huile, feux, essuie-glaces...).</li>
+      <li>Jauges carburant/AdBlue avec seuils d'alerte réglables par véhicule (voir Configuration).</li>
+      <li>Section <b>"🚗 État carrosserie"</b> : ajoute une photo datée avec description en cas de dégât constaté.</li>
+      <li>Une fois enregistrée, si une case est décochée ou un seuil dépassé, un badge rouge "⚠ Engin — anomalie(s)" apparaît partout (tableau de bord, récapitulatif) au lieu du vert "✓ Engin OK".</li>
+      <li>La fréquence (hebdomadaire avec jour au choix, ou mensuelle type "1er lundi"/"dernier jeudi") se règle dans la fiche du véhicule.</li>
+    </ul>
+  `)}
+  ${helpSection('4. Mode vocal',`
+    <p style="font-size:13px;">Bouton <b>"🎤 Mode vocal"</b> dans la vérification matériel — pratique pour aller vite, seul, sans les mains.</p>
+    <ul style="font-size:12.5px;line-height:1.7;">
+      <li>L'appli énonce chaque article, tu réponds : <b>"conforme"</b> (ou "oui"), <b>"manquant"</b>, <b>"périmé"</b> ou <b>"HS"</b>.</li>
+      <li>Si un problème est signalé, elle demande si tu veux ajouter un commentaire vocal.</li>
+      <li>Fonctionne sur Chrome et Edge (mobile et ordinateur). <b>Ne fonctionne pas sur Firefox.</b></li>
+      <li>Le bouton "🔊 Voix" permet de choisir une voix plus naturelle si plusieurs sont disponibles sur l'appareil.</li>
+      <li>Si tu fermes en cours de route, le mode vocal reprend exactement où tu t'étais arrêté au prochain lancement sur ce véhicule.</li>
+    </ul>
+  `)}
+  ${helpSection('5. Les réserves',`
+    <p style="font-size:13px;">Cinq réserves : Pharmacie, ARI, Bouteilles d'oxygène, Petit matériel, Matériel VSAV.</p>
+    <ul style="font-size:12.5px;line-height:1.7;">
+      <li><b>"➕ Ajouter un élément"</b> en haut de chaque réserve.</li>
+      <li>Chaque référence choisit son <b>mode de suivi</b> : <i>Par quantité</i> (stock, ex: tuyaux) ou <i>Individuel</i> (numéro unique, ex: bouteille, groupe électrogène).</li>
+      <li>Pour les bouteilles (Oxygène/ARI) : numéro obligatoire, badge "Vide" automatique sous la pression minimale, bouton "Rechargée" pour les bouteilles ARI qui reviennent du compresseur.</li>
+      <li><b>"⧉"</b> sur chaque ligne pour dupliquer une référence — l'appli prévient si le nouveau numéro existe déjà ailleurs.</li>
+      <li><b>"📦 Réceptionner une commande"</b> (Pharmacie et Oxygène) pour enregistrer plusieurs arrivées d'un coup.</li>
+      <li><b>"🔍 Détecter les doublons"</b> (tableau de bord) repère les noms proches ("compresse" / "compresses stériles"...) et propose de les fusionner.</li>
+    </ul>
+  `)}
+  ${helpSection('6. Retour d\'intervention & suivi hôpital',`
+    <ul style="font-size:12.5px;line-height:1.7;">
+      <li><b>"🚑 Retour d'intervention"</b> (dans la vérification d'un véhicule) : coche rapidement ce qui manque après une sortie, sans refaire tout l'inventaire. Coche "resté à l'hôpital" uniquement pour ce qui a vraiment été laissé sur place.</li>
+      <li><b>"🏥 Suivi matériel en CH"</b> (tableau de bord) liste tout ce qui est resté en centre hospitalier. "✓ Récupéré" le remet automatiquement dans la Réserve Matériel VSAV.</li>
+    </ul>
+  `)}
+  ${helpSection('7. Panne véhicule & prêt entre centres',`
+    <ul style="font-size:12.5px;line-height:1.7;">
+      <li><b>"🚨 Signaler une panne"</b> (carte du véhicule) : engin envoyé à l'atelier départemental ou un autre garage. Un bandeau rouge "INDISPONIBLE" apparaît partout tant que ce n'est pas clôturé par "✓ De retour d'atelier".</li>
+      <li><b>"🔄 Prêter"</b> : l'engin passe sous la gestion d'un autre centre (qui devient responsable des vérifications), le centre d'origine garde une vue en lecture seule tant que le prêt est en cours.</li>
+    </ul>
+  `)}
+  ${helpSection('8. Suivi réparations',`
+    <p style="font-size:13px;">Depuis le tableau de bord ("🔧 Suivi réparations") ou directement sur un item manquant/HS ("🔧 Envoyer en réparation").</p>
+    <ul style="font-size:12.5px;line-height:1.7;">
+      <li>Destination libre (Atelier interne, Pôle logistique, Réparateur externe...), avec la possibilité d'en ajouter de nouvelles.</li>
+      <li>Au retour, le matériel venant d'un véhicule repart en réserve (choix de laquelle), pas directement sur le véhicule.</li>
+    </ul>
+  `)}
+  ${helpSection('9. Récapitulatif, recherche et impression',`
+    <ul style="font-size:12.5px;line-height:1.7;">
+      <li><b>"📋 Récap du jour"</b> : un menu déroulant par véhicule avec le statut du jour, sélectionnable par date.</li>
+      <li><b>"🔍 Recherche globale"</b> : trouve un article dans tous les véhicules et toutes les réserves à la fois.</li>
+      <li><b>"🖨 Imprimer"</b> (vérification et récapitulatif) : version papier de secours.</li>
+      <li><b>"💾 Sauvegarder tout"</b> / <b>"📤 Restaurer une sauvegarde"</b> : sauvegarde complète de toutes les données, à faire régulièrement.</li>
+    </ul>
+  `)}
+  ${helpSection('10. Pour les administrateurs',`
+    <ul style="font-size:12.5px;line-height:1.7;">
+      <li><b>"Configurer"</b> un véhicule : emplacements, articles, photos, seuils carburant/AdBlue — protégé par mot de passe si activé (bouton "🔒 Sécurité" sur le tableau de bord).</li>
+      <li>Signalements <b>"📍 Mauvais emplacement"</b> faits par les agents : visibles en rouge dans la Configuration, avec bouton "✓ Corrigé" une fois l'article déplacé.</li>
+      <li>Import direct des exports Axis-SP (.xls) et export JSON complet pour sauvegarde.</li>
+    </ul>
+  `)}`;
+}
+function helpFaqContent(){
+  const qa=[
+    ['Pourquoi ça met du temps à s\'afficher après un clic ?','Les actions les plus fréquentes (cocher un statut, changer une quantité en réserve) s\'affichent maintenant immédiatement, la sauvegarde se fait ensuite en arrière-plan. Si un délai persiste ailleurs, c\'est le temps de connexion au serveur — regarde la pastille "💾 Enregistré" en haut : si elle passe en rouge "⚠ Non synchronisé", vérifie ta connexion internet.'],
+    ['J\'ai oublié d\'indiquer qui vérifie, comment corriger après coup ?','Dans le récapitulatif du jour, un bouton "+ Ajouter un nom" apparaît à côté de "Clôturé par..." et de "Vérification engin effectuée — par...".'],
+    ['Le mode vocal ne fonctionne pas sur mon téléphone, que faire ?','Vérifie que tu utilises bien Chrome ou Edge à jour (pas Firefox, qui ne le supporte pas). La reconnaissance vocale nécessite aussi une connexion internet. Si ça ne marche vraiment pas, les boutons manuels (OK/Manq./Périmé/H.S.) restent une solution fiable.'],
+    ['Comment savoir si un véhicule a une vérification en retard ?','La carte du véhicule affiche "⏰ à vérifier" (matériel) ou "🔧 Vérification engin en retard" (engin). Le bandeau "📅 Cette semaine" en haut du tableau de bord regroupe aussi tout ce qui est en retard ou à prévoir sur la semaine (lundi à dimanche).'],
+    ['Quelle différence entre "suivi individuel" et "par quantité" en réserve ?','"Par quantité" (stock) convient au consommable interchangeable (tuyaux, compresses...) — un seul nombre suffit. "Individuel" convient à ce qui a un numéro de série unique (bouteille, groupe électrogène...) — chaque unité est une ligne à part, traçable précisément.'],
+    ['Que fait le bouton 📍 sur un article ?','Il signale à l\'administrateur que cet article n\'est pas catalogué au bon emplacement dans le véhicule. Ça apparaît en rouge dans la Configuration jusqu\'à ce que l\'admin corrige la structure et clique "✓ Corrigé".'],
+    ['Un véhicule affiche "Lecture seule", pourquoi ?','Il est actuellement prêté à un autre centre — c\'est ce centre qui gère désormais ses vérifications. Le centre d\'origine garde une visibilité complète mais ne peut plus modifier tant que le prêt est en cours.'],
+    ['J\'ai oublié le mot de passe administrateur, que faire ?','Il n\'y a pas de récupération automatique (le mot de passe n\'est jamais stocké en clair). Il faut qu\'un administrateur déjà connecté le change depuis "🔒 Sécurité" sur le tableau de bord.'],
+    ['Comment fusionner deux références en double dans une réserve ?','Bouton "🔍 Détecter les doublons" sur le tableau de bord. Décoche les éléments à exclure, choisis lequel garder, "Fusionner ce groupe" additionne les stocks sur la référence conservée.'],
+    ['Comment ajouter un nouveau centre pour les prêts ?','Directement depuis la fenêtre "🔄 Prêter" ou "🏠 Mon centre", option "+ Nouveau centre…".'],
+    ['Mes modifications sont-elles visibles par toute l\'équipe immédiatement ?','Oui, la synchronisation est en temps réel entre tous les appareils connectés (via Firestore). Un simple rechargement de page suffit si un changement ne semble pas apparaître.'],
+    ['Comment imprimer une check-list papier de secours ?','Bouton "🖨 Imprimer" dans la vérification d\'un véhicule ou dans le récapitulatif du jour — tous les menus se déplient automatiquement et seuls les éléments utiles à la lecture papier restent affichés.'],
+    ['Comment sauvegarder mes données régulièrement ?','Bouton "💾 Sauvegarder tout" sur le tableau de bord — télécharge un fichier avec absolument tout (véhicules, réserves, historiques). À faire avant toute manipulation importante.'],
+  ];
+  return `<div class="emp-block"><div class="emp-body">`+qa.map(([q,a])=>`
+    <details style="border-bottom:1px solid var(--line);padding:10px 0;">
+      <summary style="cursor:pointer;font-weight:700;font-size:13px;color:var(--navy);">${q}</summary>
+      <p style="font-size:12.5px;color:var(--ink);margin:8px 0 0;line-height:1.6;">${a}</p>
+    </details>`).join('')+`</div></div>`;
+}
 function renderHospitalTracking(){
   const active=state.hospitalTracking.filter(h=>!h.returned);
   const done=state.hospitalTracking.filter(h=>h.returned).slice(-30).reverse();
@@ -2819,11 +2976,14 @@ function renderCheck(vehicleId){
   <div class="detail-header">
     <div class="detail-title"><h2>${escapeHtml(v.name)}</h2><div class="code">${escapeHtml(v.cis||'—')}${v.currentCis&&v.currentCis!==v.cis?' · géré par '+escapeHtml(v.currentCis):''} · ${s.pct}% conforme</div></div>
     <div class="detail-actions">
-      ${readOnly?'':'<button class="btn primary small" id="voiceModeBtn">🎤 Mode vocal</button><button class="btn ghost small" id="voiceSettingsBtn">🔊 Voix</button><button class="btn ghost small" id="interventionBtn">🚑 Retour d\'intervention</button><button class="btn ghost small" id="closeCheckBtn">✓ Clôturer la vérification</button>'}
-      <button class="btn ghost small" id="orderBtn">🛒 Commande</button>
+      ${readOnly?'':'<button class="btn primary small" id="voiceModeBtn">🎤 Mode vocal</button>'}
       <button class="btn ghost small" id="toTechTab">Vérification engin</button>
-      ${readOnly?'':'<button class="btn ghost small" id="toConfigTab">Configurer</button>'}
-      <button class="btn ghost small" id="printCheckBtn">🖨 Imprimer</button>
+      <details class="actions-dropdown"><summary>⋯ Plus</summary><div class="dropdown-panel">
+        ${readOnly?'':'<button class="btn ghost small" id="voiceSettingsBtn">🔊 Voix</button><button class="btn ghost small" id="interventionBtn">🚑 Retour d\'intervention</button><button class="btn ghost small" id="closeCheckBtn">✓ Clôturer la vérification</button>'}
+        <button class="btn ghost small" id="orderBtn">🛒 Commande</button>
+        ${readOnly?'':'<button class="btn ghost small" id="toConfigTab">Configurer</button>'}
+        <button class="btn ghost small" id="printCheckBtn">🖨 Imprimer</button>
+      </div></details>
     </div>
   </div>
   ${v.outOfService?`<div class="comment-text" style="background:#fdecec;border-color:var(--red-dark);color:var(--red-dark);margin-bottom:12px;"><b>🚨 Engin indisponible</b> — actuellement à : <b>${escapeHtml(v.outOfServiceInfo.dest)}</b>${v.outOfServiceInfo.motif?' — '+escapeHtml(v.outOfServiceInfo.motif):''}${v.outOfServiceInfo.dateRetourPrevue?' · retour prévu le '+fmtDate(v.outOfServiceInfo.dateRetourPrevue):''}</div>`:''}
