@@ -320,7 +320,7 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
 <div class="topbar">
   <div class="brand">
     <div class="mark">CIS</div>
-    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.10.0</div></div>
+    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.11.0</div></div>
   </div>
   <div class="actions">
     <div id="syncStatus" class="sync-status ok">💾 Enregistré</div>
@@ -786,7 +786,7 @@ function render(){
   else if(currentView.type==='hospitalTracking')renderHospitalTracking();
   else if(currentView.type==='help')renderHelp(currentView.tab);
 }
-const APP_VERSION='1.10.0'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.11.0'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -927,6 +927,9 @@ function buildWeeklyAlerts(){
   const pushed=new Set();
   const push=a=>{ const k=a.vehicleId+':'+a.type; if(pushed.has(k))return; pushed.add(k); alerts.push(a); };
   state.vehicles.forEach(v=>{
+    // Un engin prêté à un autre centre ou actuellement en panne n'a pas besoin d'être rappelé
+    // à la vérification — il n'est simplement pas disponible pour ça.
+    if(v.outOfService || (v.currentCis && v.currentCis!==v.cis)) return;
     const due=checkDueInfo(v);
     if(v.checkFrequency!=='quotidien'){
       if(due.due) push({vehicleId:v.id,vehicleName:v.name,type:'Vérification matériel',label:due.label,severity:'overdue'});
@@ -956,6 +959,7 @@ function buildMaintenanceAlerts(){
   const horizonStr=horizon.toISOString().slice(0,10);
   const alerts=[];
   state.vehicles.forEach(v=>{
+    if(v.outOfService || (v.currentCis && v.currentCis!==v.cis)) return;
     const t=v.techCheck;
     if(!t) return;
     [['ctDate','Contrôle technique'],['vidangeDate','Vidange / entretien']].forEach(([field,label])=>{
