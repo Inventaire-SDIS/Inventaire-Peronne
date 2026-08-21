@@ -324,7 +324,7 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
 <div class="topbar">
   <div class="brand">
     <div class="mark">CIS</div>
-    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.22.0</div></div>
+    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.23.0</div></div>
   </div>
   <div class="actions">
     <div id="syncStatus" class="sync-status ok">💾 Enregistré</div>
@@ -654,10 +654,39 @@ async function importSeedCatalogue(){
 }
 
 async function loadState(){
+  let loadFailed=false;
+  let res=null, callSucceeded=false;
+  for(let attempt=0;attempt<3;attempt++){
+    try{
+      res=await window.storage.get(STORAGE_KEY,true);
+      callSucceeded=true;
+      break;
+    }catch(e){
+      console.error('Tentative de chargement '+(attempt+1)+' échouée :',e);
+      if(attempt<2) await new Promise(r=>setTimeout(r,800)); // petite pause avant de retenter
+    }
+  }
   try{
-    const res=await window.storage.get(STORAGE_KEY,true);
-    if(res&&res.value){state=JSON.parse(res.value);}else{state=defaultData();await saveState();}
-  }catch(e){state=defaultData();await saveState();}
+    if(!callSucceeded){
+      throw new Error('Aucune réponse après 3 tentatives');
+    }
+    if(res&&res.value){
+      state=JSON.parse(res.value);
+    } else {
+      // Réponse reçue mais vraiment vide (premier lancement) : on initialise avec l'exemple et on sauvegarde.
+      state=defaultData(); await saveState();
+    }
+  }catch(e){
+    // ERREUR DE LECTURE persistante — surtout NE JAMAIS écraser les données existantes avec
+    // l'exemple par défaut dans ce cas : on ne sait pas si elles existent, on n'a juste pas réussi à
+    // les récupérer. On affiche un état temporaire SANS le sauvegarder, et on prévient clairement.
+    console.error('Erreur de chargement des données :', e);
+    state=defaultData();
+    loadFailed=true;
+  }
+  if(loadFailed){
+    alert('⚠ Impossible de récupérer tes données enregistrées (problème de connexion). Ce que tu vois actuellement est temporaire et ne sera PAS sauvegardé. Recharge la page une fois la connexion rétablie avant de continuer à travailler — surtout ne rien modifier ici pour l\'instant.');
+  }
   let anyWeeklyReset=false;
   state.vehicles.forEach(v=>{
     if(resetWeeklyTechCheckIfNeeded(v)) anyWeeklyReset=true;
@@ -666,8 +695,9 @@ async function loadState(){
   });
   ensureReservesShape();
   // Si une remise à zéro (engin ou matériel) a modifié au moins un véhicule, on sauvegarde
-  // immédiatement pour que ce soit visible par tous les appareils, pas seulement celui-ci.
-  if(anyWeeklyReset) await saveState();
+  // immédiatement pour que ce soit visible par tous les appareils, pas seulement celui-ci —
+  // mais jamais si le chargement lui-même a échoué (voir plus haut).
+  if(anyWeeklyReset && !loadFailed) await saveState();
   if(state.centres.length===0){
     const found=new Set();
     state.vehicles.forEach(v=>{ if(v.cis) found.add(v.cis); });
@@ -893,7 +923,7 @@ function render(){
   else if(currentView.type==='hospitalTracking')renderHospitalTracking();
   else if(currentView.type==='help')renderHelp(currentView.tab);
 }
-const APP_VERSION='1.22.0'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.23.0'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
