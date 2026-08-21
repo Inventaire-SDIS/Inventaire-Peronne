@@ -153,6 +153,9 @@ input,select,textarea{font-family:var(--font-body);}
 .card{background:#fff;border:1px solid var(--line);border-left:5px solid var(--grey);padding:14px;position:relative;cursor:grab;}
 .card.dragging{opacity:.4;}
 .card.drag-over{outline:2px dashed var(--navy);outline-offset:-2px;}
+.article-row.dragging,.sub-row.dragging{opacity:.4;}
+.article-row.drag-over,.sub-row.drag-over{outline:2px dashed var(--navy);outline-offset:-2px;}
+.article-row[draggable="true"],.sub-row[draggable="true"]{cursor:grab;}
 .card.st-ok{border-left-color:var(--green);} .card.st-warn{border-left-color:var(--amber);} .card.st-bad{border-left-color:var(--red);}
 .card .row1{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;}
 .card h3{font-family:var(--font-head);font-size:17px;margin:7px 0 2px;color:var(--navy);cursor:pointer;}
@@ -320,7 +323,7 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
 <div class="topbar">
   <div class="brand">
     <div class="mark">CIS</div>
-    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.17.0</div></div>
+    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.19.0</div></div>
   </div>
   <div class="actions">
     <div id="syncStatus" class="sync-status ok">💾 Enregistré</div>
@@ -510,6 +513,7 @@ function ensureReservesShape(){
   if(!Array.isArray(state.centres)) state.centres=[];
   if(!Array.isArray(state.hospitalTracking)) state.hospitalTracking=[];
   if(!Array.isArray(state.garages)) state.garages=['Atelier départemental'];
+  if(!Array.isArray(state.roadClosures)) state.roadClosures=[];
 }
 
 /* ---------- Protection admin (verrou sur la configuration) ---------- */
@@ -819,7 +823,7 @@ function render(){
   else if(currentView.type==='hospitalTracking')renderHospitalTracking();
   else if(currentView.type==='help')renderHelp(currentView.tab);
 }
-const APP_VERSION='1.17.0'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.19.0'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -1045,6 +1049,33 @@ function bindVehicleDragDrop(){
     });
   });
 }
+/* ---------- Arrêté de circulation / route barrée ---------- */
+function openRoadClosureModal(){
+  const overlay=document.createElement('div'); overlay.className='overlay';
+  overlay.innerHTML=`<div class="modal"><h3>🚧 Signaler une route barrée</h3>
+    <div class="field"><label>Ville</label><input id="rcVille" placeholder="Ex: Péronne"></div>
+    <div class="field"><label>Route concernée</label><input id="rcRoute" placeholder="Ex: D1017, rue de la République..."></div>
+    <div class="field-inline">
+      <label>Date de début</label><input type="date" id="rcDateDebut" value="${todayStr()}">
+      <label>Date de fin prévue</label><input type="date" id="rcDateFin">
+    </div>
+    <div class="field"><label>Précision (optionnel)</label><input id="rcNote" placeholder="Ex: travaux, manifestation..."></div>
+    <div class="modal-actions"><button class="btn ghost" id="rcCancel">Annuler</button><button class="btn primary" id="rcConfirm">Enregistrer</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  document.getElementById('rcCancel').addEventListener('click',()=>overlay.remove());
+  document.getElementById('rcConfirm').addEventListener('click',async()=>{
+    const ville=document.getElementById('rcVille').value.trim();
+    const route=document.getElementById('rcRoute').value.trim();
+    const dateDebut=document.getElementById('rcDateDebut').value;
+    const dateFin=document.getElementById('rcDateFin').value;
+    if(!ville||!route||!dateDebut||!dateFin){ alert('Ville, route, date de début et date de fin sont obligatoires.'); return; }
+    const note=document.getElementById('rcNote').value.trim();
+    state.roadClosures=state.roadClosures||[];
+    state.roadClosures.push({id:uid('rc'),ville,route,dateDebut,dateFin,note,reopened:false,createdBy:currentCheckerLabel(),createdDate:todayStr()});
+    await saveState(); overlay.remove(); render();
+  });
+}
 function renderDashboard(){
   unitCountEl.textContent=state.vehicles.length+' véhicule(s) suivis';
   let totalItems=0,ok=0,warn=0,bad=0;
@@ -1068,13 +1099,43 @@ function renderDashboard(){
       <div class="summary-cell warn"><div class="n">${warn}</div><div class="l">À vérifier</div></div>
       <div class="summary-cell bad"><div class="n">${bad}</div><div class="l">Anomalies</div></div>
     </div>`;
+  const roadClosures=state.roadClosures||[];
+  const rcActive=roadClosures.filter(rc=>!rc.reopened);
+  const rcOngoing=rcActive.filter(rc=>rc.dateDebut<=todayStr());
+  const rcUpcoming=rcActive.filter(rc=>rc.dateDebut>todayStr());
+  html+=`<details class="emp-block" style="margin-top:16px;${rcOngoing.length?'border-left:4px solid var(--red);':'border-left:4px solid var(--steel);'}" open>
+    <summary style="cursor:pointer;padding:12px 14px;background:${rcOngoing.length?'#fdecec':'var(--paper)'};display:flex;justify-content:space-between;align-items:center;font-family:var(--font-head);font-size:15px;color:${rcOngoing.length?'var(--red-dark)':'var(--navy)'};">
+      <span>🚧 Arrêté de circulation / route barrée${rcActive.length?' ('+rcActive.length+')':''}</span>
+    </summary>
+    <div class="emp-body">
+      <button class="btn small primary" id="addRoadClosureBtn" style="margin-bottom:10px;">➕ Signaler une route barrée</button>`;
+  if(!rcActive.length){ html+='<p style="font-size:12.5px;color:var(--muted);">Aucun arrêté de circulation en cours ou prévu.</p>'; }
+  if(rcOngoing.length){
+    html+=`<div style="font-size:11px;font-weight:700;color:var(--red-dark);text-transform:uppercase;margin-bottom:4px;">🚧 En cours (${rcOngoing.length})</div>`;
+    rcOngoing.forEach(rc=>{
+      html+=`<div class="article-row" style="grid-template-columns:1fr 160px;">
+        <div style="font-size:12.5px;"><b>${escapeHtml(rc.ville)}</b> — ${escapeHtml(rc.route)}<br><span class="article-sub">Depuis le ${fmtDate(rc.dateDebut)} · fin prévue ${fmtDate(rc.dateFin)}${rc.note?' · '+escapeHtml(rc.note):''}</span></div>
+        <button class="btn small primary" data-reopen-road="${rc.id}">✓ Route disponible</button>
+      </div>`;
+    });
+  }
+  if(rcUpcoming.length){
+    html+=`<div style="font-size:11px;font-weight:700;color:var(--steel);text-transform:uppercase;margin:10px 0 4px;">📅 Prévues (${rcUpcoming.length})</div>`;
+    rcUpcoming.forEach(rc=>{
+      html+=`<div class="article-row" style="grid-template-columns:1fr 160px;">
+        <div style="font-size:12.5px;"><b>${escapeHtml(rc.ville)}</b> — ${escapeHtml(rc.route)}<br><span class="article-sub">Du ${fmtDate(rc.dateDebut)} au ${fmtDate(rc.dateFin)}${rc.note?' · '+escapeHtml(rc.note):''}</span></div>
+        <button class="btn small ghost" data-reopen-road="${rc.id}">✓ Annuler</button>
+      </div>`;
+    });
+  }
+  html+=`</div></details>`;
   const weeklyAlerts=buildWeeklyAlerts();
   const overdueAlerts=weeklyAlerts.filter(a=>a.severity==='overdue');
   const upcomingAlerts=weeklyAlerts.filter(a=>a.severity==='upcoming');
   if(weeklyAlerts.length){
     const monday=mondayOfWeek(todayStr()); const sunday=new Date(monday); sunday.setDate(sunday.getDate()+6);
-    html+=`<div class="emp-block" style="margin-top:16px;${overdueAlerts.length?'border-left:4px solid var(--red);':'border-left:4px solid var(--amber);'}">
-      <div class="emp-head" style="background:${overdueAlerts.length?'#fdecec':'#fff6e6'};"><span class="name" style="color:${overdueAlerts.length?'var(--red-dark)':'var(--amber-dark)'};">📅 Cette semaine (${fmtDate(monday)} → ${fmtDate(sunday.toISOString().slice(0,10))})</span></div>
+    html+=`<details class="emp-block" style="margin-top:16px;${overdueAlerts.length?'border-left:4px solid var(--red);':'border-left:4px solid var(--amber);'}" open>
+      <summary style="cursor:pointer;padding:12px 14px;background:${overdueAlerts.length?'#fdecec':'#fff6e6'};display:flex;justify-content:space-between;align-items:center;font-family:var(--font-head);font-size:15px;color:${overdueAlerts.length?'var(--red-dark)':'var(--amber-dark)'};">📅 Cette semaine (${fmtDate(monday)} → ${fmtDate(sunday.toISOString().slice(0,10))})</summary>
       <div class="emp-body">`;
     if(overdueAlerts.length){
       html+=`<div style="font-size:11px;font-weight:700;color:var(--red-dark);text-transform:uppercase;margin-bottom:4px;">⛔ En retard (${overdueAlerts.length})</div>`;
@@ -1088,14 +1149,14 @@ function renderDashboard(){
         html+=`<div class="article-row" style="grid-template-columns:1fr;padding:6px 0;"><div style="font-size:12.5px;cursor:pointer;" data-goto-vehicle="${a.vehicleId}"><b>${escapeHtml(a.vehicleName)}</b> — ${escapeHtml(a.type)} : ${escapeHtml(a.label)}</div></div>`;
       });
     }
-    html+=`</div></div>`;
+    html+=`</div></details>`;
   }
   const maintAlerts=buildMaintenanceAlerts();
   const maintOverdue=maintAlerts.filter(a=>a.severity==='overdue');
   const maintUpcoming=maintAlerts.filter(a=>a.severity==='upcoming');
   if(maintAlerts.length){
-    html+=`<div class="emp-block" style="margin-top:16px;${maintOverdue.length?'border-left:4px solid var(--red);':'border-left:4px solid var(--amber);'}">
-      <div class="emp-head" style="background:${maintOverdue.length?'#fdecec':'#fff6e6'};"><span class="name" style="color:${maintOverdue.length?'var(--red-dark)':'var(--amber-dark)'};">🔧 Contrôle technique & entretien (30 jours)</span></div>
+    html+=`<details class="emp-block" style="margin-top:16px;${maintOverdue.length?'border-left:4px solid var(--red);':'border-left:4px solid var(--amber);'}" open>
+      <summary style="cursor:pointer;padding:12px 14px;background:${maintOverdue.length?'#fdecec':'#fff6e6'};display:flex;justify-content:space-between;align-items:center;font-family:var(--font-head);font-size:15px;color:${maintOverdue.length?'var(--red-dark)':'var(--amber-dark)'};">🔧 Contrôle technique & entretien (30 jours)</summary>
       <div class="emp-body">`;
     if(maintOverdue.length){
       html+=`<div style="font-size:11px;font-weight:700;color:var(--red-dark);text-transform:uppercase;margin-bottom:4px;">⛔ Dépassés (${maintOverdue.length})</div>`;
@@ -1109,7 +1170,7 @@ function renderDashboard(){
         html+=`<div class="article-row" style="grid-template-columns:1fr;padding:6px 0;"><div style="font-size:12.5px;cursor:pointer;" data-goto-vehicle="${a.vehicleId}"><b>${escapeHtml(a.vehicleName)}</b> — ${escapeHtml(a.type)} : ${escapeHtml(a.label)}</div></div>`;
       });
     }
-    html+=`</div></div>`;
+    html+=`</div></details>`;
   }
   if(state.vehicles.length===0){
     html+=`<div class="empty-state">Aucun véhicule.<br><button class="btn primary" id="emptyAddBtn" style="margin-top:10px;">Ajouter un véhicule</button></div>`;
@@ -1201,6 +1262,12 @@ function renderDashboard(){
   document.getElementById('repairsBtn').addEventListener('click',openRepairsView);
   document.getElementById('hospitalTrackingBtn').addEventListener('click',openHospitalTrackingView);
   document.getElementById('globalSearchBtn').addEventListener('click',openGlobalSearchModal);
+  const addRcBtn=document.getElementById('addRoadClosureBtn'); if(addRcBtn) addRcBtn.addEventListener('click',openRoadClosureModal);
+  app.querySelectorAll('[data-reopen-road]').forEach(el=>el.addEventListener('click',async()=>{
+    const rc=(state.roadClosures||[]).find(x=>x.id===el.dataset.reopenRoad); if(!rc)return;
+    rc.reopened=true; rc.dateFinReelle=todayStr();
+    await saveState(); render();
+  }));
   bindVehicleDragDrop();
   document.getElementById('securityBtn').addEventListener('click',openAdminSettingsModal);
   document.getElementById('dupBtn').addEventListener('click',()=>requireAdmin(openDuplicatesModal));
@@ -1458,7 +1525,7 @@ function renderReserve(cat,search,sort){
               ${it.qty>0
                 ? '<span class="tag" style="background:var(--green);color:#fff;">En stock</span>'
                 : '<span class="tag" style="background:var(--grey);color:#fff;">Montée / sortie</span>'}
-              <button class="btn small ghost" style="margin-top:4px;" data-toggle-r-avail="${it.id}">${it.qty>0?'Marquer sortie':'Marquer en stock'}</button>
+              <button class="btn small ghost" style="margin-top:4px;" data-assign-bottle="${it.id}">${it.qty>0?'📍 Assigner à un véhicule':'✓ Marquer en stock'}</button>
             </div>`
           : `<div><label style="font-size:10px;color:var(--muted);display:block;">Stock</label><input type="number" min="0" value="${it.qty}" style="width:60px;" data-set-r-qty="${it.id}"></div>
         <div><label style="font-size:10px;color:var(--muted);display:block;">Seuil</label><input type="number" min="0" value="${it.qtyMin}" style="width:60px;" data-set-r-qtymin="${it.id}"></div>`}
@@ -1563,17 +1630,14 @@ function renderReserve(cat,search,sort){
     app.querySelectorAll('[data-set-r-qty]').forEach(el=>el.addEventListener('change',()=>{
       const it=allItems.find(x=>x.id===el.dataset.setRQty); it.qty=Math.max(0,parseInt(el.value)||0); render(); saveState();
     }));
-    app.querySelectorAll('[data-toggle-r-avail]').forEach(el=>el.addEventListener('click',()=>{
-      const it=allItems.find(x=>x.id===el.dataset.toggleRAvail); if(!it)return;
+    app.querySelectorAll('[data-assign-bottle]').forEach(el=>el.addEventListener('click',()=>{
+      const it=allItems.find(x=>x.id===el.dataset.assignBottle); if(!it)return;
       if(it.qty>0){
-        // Sortie du stock : on demande simplement où elle part, pour garder la traçabilité même
-        // sans passer par le circuit complet "Piocher en réserve" depuis un véhicule.
-        const loc=prompt('Sur quel véhicule / emplacement part cette bouteille ? (laisser vide si inconnu)','');
-        it.qty=0; it.currentVehicleLabel=loc&&loc.trim()?loc.trim():'';
+        openAssignBottleModal(cat,it);
       } else {
         it.qty=1; it.currentVehicleLabel='';
+        render(); saveState();
       }
-      render(); saveState();
     }));
     app.querySelectorAll('[data-set-r-qtymin]').forEach(el=>el.addEventListener('change',async()=>{
       const it=allItems.find(x=>x.id===el.dataset.setRQtymin); it.qtyMin=Math.max(0,parseInt(el.value)||0); await saveState(); render();
@@ -2024,6 +2088,69 @@ function guessReserveCat(article){
   if(article.regType==='O2') return 'oxygene';
   if(article.regType==='ARI') return 'ari';
   return 'petit';
+}
+function openAssignBottleModal(cat,it){
+  const regType = cat==='oxygene' ? 'O2' : 'ARI';
+  // Liste tous les emplacements existants (article ou sous-article) déjà classés dans ce suivi réglementaire,
+  // sur tous les véhicules — pas besoin d'ouvrir chaque véhicule un par un pour trouver où assigner la bouteille.
+  const slots=[];
+  state.vehicles.forEach(v=>{
+    v.emplacements.forEach(emp=>{
+      emp.articles.forEach(a=>{
+        if(a.regType===regType) slots.push({vId:v.id,vName:v.name,empName:emp.name,label:a.name,empId:emp.id,artId:a.id,subId:null,currentNum:a.invNum});
+        (a.sousArticles||[]).forEach(s=>{
+          if(s.regType===regType) slots.push({vId:v.id,vName:v.name,empName:emp.name,label:a.name+' > '+s.name,empId:emp.id,artId:a.id,subId:s.id,currentNum:s.invNum});
+        });
+      });
+    });
+  });
+  const overlay=document.createElement('div'); overlay.className='overlay';
+  if(!slots.length){
+    overlay.innerHTML=`<div class="modal"><h3>📍 Assigner « ${escapeHtml(it.name)} »</h3>
+      <p style="font-size:12.5px;color:var(--muted);">Aucun emplacement classé « ${REG_TYPES[regType]} » trouvé sur les véhicules. Il faut d'abord classer un article ou sous-article ainsi dans la Configuration du véhicule concerné.</p>
+      <div class="modal-actions"><button class="btn primary" id="assignClose">Fermer</button></div></div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('assignClose').addEventListener('click',()=>overlay.remove());
+    return;
+  }
+  overlay.innerHTML=`<div class="modal wide"><h3>📍 Assigner « ${escapeHtml(it.name)} »</h3>
+    <p style="font-size:12px;color:var(--muted);">Choisis l'emplacement (véhicule) qui doit recevoir cette bouteille.</p>
+    <div style="max-height:340px;overflow-y:auto;">${slots.map((s,i)=>`
+      <label style="display:flex;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px;cursor:pointer;">
+        <input type="radio" name="assignSlot" value="${i}" ${i===0?'checked':''}>
+        <div><b>${escapeHtml(s.vName)}</b> — ${escapeHtml(s.empName)} — ${escapeHtml(s.label)}${s.currentNum?` <span class="article-sub">(actuellement : ${escapeHtml(s.currentNum)})</span>`:''}</div>
+      </label>`).join('')}</div>
+    <div class="modal-actions"><button class="btn ghost" id="assignCancel">Annuler</button><button class="btn primary" id="assignConfirm">Assigner</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  document.getElementById('assignCancel').addEventListener('click',()=>overlay.remove());
+  document.getElementById('assignConfirm').addEventListener('click',async()=>{
+    const idx=parseInt(overlay.querySelector('input[name="assignSlot"]:checked').value);
+    const s=slots[idx];
+    const v=state.vehicles.find(x=>x.id===s.vId);
+    const{a}=findArt(v,s.empId+':'+s.artId);
+    const target=s.subId?a.sousArticles.find(x=>x.id===s.subId):a;
+    const oldNum=target.invNum;
+    target.invNum=it.numero; target.volumeL=it.volumeL||target.volumeL; target.pressureBar=it.pressureBar||target.pressureBar;
+    syncBottleReserveLink(regType,oldNum,it.numero,s.vName+' — '+s.empName);
+    await saveState(); overlay.remove(); render();
+    alert('Bouteille assignée à '+s.vName+' — '+s.empName+'.');
+  });
+}
+function syncBottleReserveLink(regType,oldNum,newNum,locationLabel){
+  // Que le numéro soit saisi à la main OU choisi via "Piocher en réserve", on garde la réserve
+  // synchronisée : l'ancien numéro redevient "en stock", le nouveau passe "monté" avec sa localisation.
+  const cat = regType==='O2' ? 'oxygene' : regType==='ARI' ? 'ari' : null;
+  if(!cat || !state.reserves[cat]) return;
+  const on=normalizeTxt(oldNum||''), nn=normalizeTxt(newNum||'');
+  if(on && on!==nn){
+    const oldEntry=state.reserves[cat].find(x=>normalizeTxt(x.numero||'')===on);
+    if(oldEntry){ oldEntry.qty=1; oldEntry.currentVehicleLabel=''; }
+  }
+  if(nn){
+    const newEntry=state.reserves[cat].find(x=>normalizeTxt(x.numero||'')===nn);
+    if(newEntry){ newEntry.qty=0; newEntry.currentVehicleLabel=locationLabel; }
+  }
 }
 function findBestReserveCat(name){
   // Cherche d'abord une référence de réserve dont le nom correspond, dans toutes les catégories,
@@ -2820,7 +2947,7 @@ function renderConfig(vehicleId){
       const isBottle=a.regType==='O2'||a.regType==='ARI';
       const o2Liters=isBottle && a.volumeL && a.pressureBar ? Math.round(parseFloat(a.volumeL)*parseFloat(a.pressureBar)) : null;
       const gasLabel=a.regType==='ARI'?'L air':'L O2';
-      html+=`<div class="article-row" data-art="${a.id}">
+      html+=`<div class="article-row" data-art="${a.id}" draggable="true" data-art-drag="${emp.id}:${a.id}">
         <div class="reorder-col"><button data-art-up="${emp.id}:${a.id}" ${ai===0?'disabled':''}>▲</button><button data-art-down="${emp.id}:${a.id}" ${ai===emp.articles.length-1?'disabled':''}>▼</button></div>
         <div>
           <div class="article-name"><input value="${escapeHtml(a.name)}" style="font-weight:700;font-size:13.5px;border:1px solid transparent;background:transparent;padding:2px 4px;width:auto;min-width:120px;" data-set-art-name="${emp.id}:${a.id}" onfocus="this.style.border='1px solid var(--line)';this.style.background='#fff';"> ${a.regType?`<span class="reg-badge">${REG_TYPES[a.regType]}</span>`:''}${o2Liters!==null?` <span class="tag">≈ ${o2Liters} ${gasLabel}</span>`:''}${a.wrongLocation?` <span class="reg-badge overdue">📍 Mauvais emplacement signalé</span> <button class="btn small primary" data-clear-wrong-loc="${emp.id}:${a.id}">✓ Corrigé</button>`:''} <button class="btn small ${a.dailyCheck?'primary':'ghost'}" title="Marquer/démarquer comme à vérifier tous les jours" data-toggle-daily="${emp.id}:${a.id}">☀ ${a.dailyCheck?'Tous les jours':'Marquer quotidien'}</button></div>
@@ -2851,7 +2978,7 @@ function renderConfig(vehicleId){
         html+=`<div class="sub-list">`;
         a.sousArticles.forEach((s,si)=>{
           const sIsBottle=s.regType==='O2'||s.regType==='ARI';
-          html+=`<div class="sub-row" data-sub="${s.id}" style="flex-wrap:wrap;">
+          html+=`<div class="sub-row" data-sub="${s.id}" draggable="true" data-sub-drag="${emp.id}:${a.id}:${s.id}" style="flex-wrap:wrap;">
             <div style="display:flex;align-items:center;gap:4px;flex:1;min-width:200px;">
               <div class="reorder-col" style="display:inline-flex;flex-direction:row;gap:2px;"><button data-sub-up="${emp.id}:${a.id}:${s.id}" ${si===0?'disabled':''}>◀</button><button data-sub-down="${emp.id}:${a.id}:${s.id}" ${si===a.sousArticles.length-1?'disabled':''}>▶</button></div>
               <input value="${escapeHtml(s.name)}" style="font-size:12.5px;border:1px solid transparent;background:transparent;padding:2px 4px;flex:1;min-width:100px;" data-set-sub-name="${emp.id}:${a.id}:${s.id}" onfocus="this.style.border='1px solid var(--line)';this.style.background='#fff';">
@@ -2878,6 +3005,7 @@ function renderConfig(vehicleId){
   html+=`<button id="fabAddArticle" class="fab-close" style="background:var(--navy);right:100px;" title="Ajouter un article">➕ Article</button>`;
   app.innerHTML=html;
   bindConfigEvents(v);
+  bindArticleDragDrop(v);
   document.getElementById('fabAddArticle').addEventListener('click',()=>openQuickAddArticleModal(v));
 }
 function openQuickAddArticleModal(v){
@@ -2903,6 +3031,49 @@ function openQuickAddArticleModal(v){
   });
 }
 
+function bindArticleDragDrop(v){
+  let draggedKey=null, draggedType=null;
+  app.querySelectorAll('[data-art-drag]').forEach(row=>{
+    row.addEventListener('dragstart',e=>{ draggedKey=row.dataset.artDrag; draggedType='art'; row.classList.add('dragging'); e.stopPropagation(); });
+    row.addEventListener('dragend',()=>row.classList.remove('dragging'));
+    row.addEventListener('dragover',e=>{ if(draggedType==='art'){ e.preventDefault(); row.classList.add('drag-over'); } });
+    row.addEventListener('dragleave',()=>row.classList.remove('drag-over'));
+    row.addEventListener('drop',async e=>{
+      e.preventDefault(); e.stopPropagation(); row.classList.remove('drag-over');
+      if(draggedType!=='art'||!draggedKey)return;
+      const[fromEmpId,fromArtId]=draggedKey.split(':');
+      const[toEmpId,toArtId]=row.dataset.artDrag.split(':');
+      if(fromEmpId!==toEmpId||fromArtId===toArtId)return; // on ne réordonne qu'à l'intérieur d'un même emplacement
+      const emp=v.emplacements.find(x=>x.id===fromEmpId); if(!emp)return;
+      const fromIdx=emp.articles.findIndex(a=>a.id===fromArtId);
+      const toIdx=emp.articles.findIndex(a=>a.id===toArtId);
+      if(fromIdx<0||toIdx<0)return;
+      const[moved]=emp.articles.splice(fromIdx,1);
+      emp.articles.splice(toIdx,0,moved);
+      await saveState(); render();
+    });
+  });
+  app.querySelectorAll('[data-sub-drag]').forEach(row=>{
+    row.addEventListener('dragstart',e=>{ draggedKey=row.dataset.subDrag; draggedType='sub'; row.classList.add('dragging'); e.stopPropagation(); });
+    row.addEventListener('dragend',()=>row.classList.remove('dragging'));
+    row.addEventListener('dragover',e=>{ if(draggedType==='sub'){ e.preventDefault(); row.classList.add('drag-over'); } });
+    row.addEventListener('dragleave',()=>row.classList.remove('drag-over'));
+    row.addEventListener('drop',async e=>{
+      e.preventDefault(); e.stopPropagation(); row.classList.remove('drag-over');
+      if(draggedType!=='sub'||!draggedKey)return;
+      const[fromEmpId,fromArtId,fromSubId]=draggedKey.split(':');
+      const[toEmpId,toArtId,toSubId]=row.dataset.subDrag.split(':');
+      if(fromEmpId!==toEmpId||fromArtId!==toArtId||fromSubId===toSubId)return; // seulement à l'intérieur du même article
+      const{a}=findArt(v,fromEmpId+':'+fromArtId); if(!a)return;
+      const fromIdx=a.sousArticles.findIndex(s=>s.id===fromSubId);
+      const toIdx=a.sousArticles.findIndex(s=>s.id===toSubId);
+      if(fromIdx<0||toIdx<0)return;
+      const[moved]=a.sousArticles.splice(fromIdx,1);
+      a.sousArticles.splice(toIdx,0,moved);
+      await saveState(); render();
+    });
+  });
+}
 function bindConfigEvents(v){
   document.getElementById('backLink').addEventListener('click',()=>{currentView={type:'dashboard'};render();});
   document.getElementById('toCheckTab').addEventListener('click',()=>{currentView={type:'check',vehicleId:v.id};render();});
@@ -2999,7 +3170,10 @@ function bindConfigEvents(v){
     const{a}=findArt(v,el.dataset.setRegdate); a.regDueDate=el.value; await saveState();
   }));
   app.querySelectorAll('[data-set-o2num]').forEach(el=>el.addEventListener('change',async()=>{
-    const{a}=findArt(v,el.dataset.setO2num); a.invNum=el.value; await saveState(); render();
+    const[empId,artId]=el.dataset.setO2num.split(':'); const{a,emp}=findArt(v,empId+':'+artId);
+    const oldNum=a.invNum; a.invNum=el.value.trim();
+    syncBottleReserveLink(a.regType,oldNum,a.invNum,v.name+' — '+emp.name);
+    await saveState(); render();
   }));
   app.querySelectorAll('[data-set-o2vol]').forEach(el=>el.addEventListener('change',async()=>{
     const{a}=findArt(v,el.dataset.setO2vol); a.volumeL=el.value; await saveState(); render();
@@ -3046,8 +3220,10 @@ function bindConfigEvents(v){
     const sub=a.sousArticles.find(s=>s.id===subId); sub.regType=el.value; await saveState(); render();
   }));
   app.querySelectorAll('[data-set-sub-invnum]').forEach(el=>el.addEventListener('change',async()=>{
-    const[empId,artId,subId]=el.dataset.setSubInvnum.split(':'); const{a}=findArt(v,empId+':'+artId);
-    const sub=a.sousArticles.find(s=>s.id===subId); sub.invNum=el.value.trim(); await saveState();
+    const[empId,artId,subId]=el.dataset.setSubInvnum.split(':'); const{a,emp}=findArt(v,empId+':'+artId);
+    const sub=a.sousArticles.find(s=>s.id===subId); const oldNum=sub.invNum; sub.invNum=el.value.trim();
+    syncBottleReserveLink(sub.regType,oldNum,sub.invNum,v.name+' — '+emp.name);
+    await saveState(); render();
   }));
   app.querySelectorAll('[data-set-sub-volume]').forEach(el=>el.addEventListener('change',async()=>{
     const[empId,artId,subId]=el.dataset.setSubVolume.split(':'); const{a}=findArt(v,empId+':'+artId);
@@ -3298,7 +3474,7 @@ function renderCheck(vehicleId){
             <button class="comment-btn ${a.comments&&a.comments.length?'has-comment':''}"${dis} title="Ajouter un commentaire" data-comment-art="${emp.id}:${a.id}">💬</button>
             <button class="comment-btn ${a.wrongLocation?'has-comment':''}"${dis} title="${a.wrongLocation?'Retirer le signalement':'Signaler un mauvais emplacement'}" data-wrong-loc-art="${emp.id}:${a.id}">📍</button>
           </div>
-          ${isBottle?`<div class="field-inline"><label>N° bouteille</label><input value="${escapeHtml(a.invNum||'')}"${dis} style="width:130px;" placeholder="numéro" data-set-check-o2num="${emp.id}:${a.id}"><label>Pression (bar)</label><input type="number" min="0"${dis} style="width:65px;" value="${a.pressureBar||''}" data-set-check-o2pres="${emp.id}:${a.id}">${a.volumeL?`<span class="article-sub">× ${a.volumeL} L</span>`:''}${o2Liters!==null?`<span class="tag">≈ ${o2Liters} ${gasLabel} disponible</span>`:'<span class="article-sub">(renseigner le volume en Configurer)</span>'}</div>`:''}
+          ${isBottle?`<div class="field-inline"><label>N° bouteille</label><input value="${escapeHtml(a.invNum||'')}"${dis} style="width:130px;" placeholder="numéro" data-set-check-o2num="${emp.id}:${a.id}"><label>Pression (bar)</label><input type="number" min="0"${dis} style="width:65px;" value="${a.pressureBar||''}" data-set-check-o2pres="${emp.id}:${a.id}">${a.volumeL?`<span class="article-sub">× ${a.volumeL} L</span>`:''}${o2Liters!==null?`<span class="tag">≈ ${o2Liters} ${gasLabel} disponible</span>`:'<span class="article-sub">(renseigner le volume en Configurer)</span>'}${readOnly?'':`<button class="btn small ghost" data-pick-reserve-art-any="${emp.id}:${a.id}">🔁 Depuis réserve</button>`}</div>`:''}
           ${renderCommentsBlock(a,'art:'+emp.id+':'+a.id)}
           ${(a.photos||[]).length?`<div class="check-art-photos">${a.photos.map(p=>`<img src="${p}" style="cursor:pointer;" onclick="openPhotoLightbox(this.src)">`).join('')}</div>`:''}`;
         if(hasChildren){
@@ -3410,11 +3586,16 @@ function renderCheck(vehicleId){
     const[empId,artId,subId]=el.dataset.anomalyPick.split(':'); openReservePicker(v,empId,artId,subId||null);
   }));
   app.querySelectorAll('[data-set-check-o2num]').forEach(el=>el.addEventListener('change',async()=>{
-    const{a}=findArt(v,el.dataset.setCheckO2num); a.invNum=el.value; await saveState(); render();
+    const[empId,artId]=el.dataset.setCheckO2num.split(':'); const{a,emp}=findArt(v,empId+':'+artId);
+    const oldNum=a.invNum; a.invNum=el.value.trim();
+    syncBottleReserveLink(a.regType,oldNum,a.invNum,v.name+' — '+emp.name);
+    await saveState(); render();
   }));
   app.querySelectorAll('[data-set-check-subbottle-num]').forEach(el=>el.addEventListener('change',async()=>{
-    const[empId,artId,subId]=el.dataset.setCheckSubbottleNum.split(':'); const{a}=findArt(v,empId+':'+artId);
-    const sub=a.sousArticles.find(s=>s.id===subId); sub.invNum=el.value; await saveState(); render();
+    const[empId,artId,subId]=el.dataset.setCheckSubbottleNum.split(':'); const{a,emp}=findArt(v,empId+':'+artId);
+    const sub=a.sousArticles.find(s=>s.id===subId); const oldNum=sub.invNum; sub.invNum=el.value.trim();
+    syncBottleReserveLink(sub.regType,oldNum,sub.invNum,v.name+' — '+emp.name);
+    await saveState(); render();
   }));
   app.querySelectorAll('[data-set-check-subbottle-pres]').forEach(el=>el.addEventListener('change',async()=>{
     const[empId,artId,subId]=el.dataset.setCheckSubbottlePres.split(':'); const{a}=findArt(v,empId+':'+artId);
@@ -3422,6 +3603,9 @@ function renderCheck(vehicleId){
   }));
   app.querySelectorAll('[data-pick-reserve-sub-any]').forEach(el=>el.addEventListener('click',()=>{
     const[empId,artId,subId]=el.dataset.pickReserveSubAny.split(':'); openReservePicker(v,empId,artId,subId);
+  }));
+  app.querySelectorAll('[data-pick-reserve-art-any]').forEach(el=>el.addEventListener('click',()=>{
+    const[empId,artId]=el.dataset.pickReserveArtAny.split(':'); openReservePicker(v,empId,artId,null);
   }));
   app.querySelectorAll('[data-set-check-o2pres]').forEach(el=>el.addEventListener('change',async()=>{
     const{a}=findArt(v,el.dataset.setCheckO2pres); a.pressureBar=el.value; await saveState(); render();
