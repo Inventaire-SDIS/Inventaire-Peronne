@@ -264,16 +264,17 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
 .comment-text b{color:var(--amber-dark);}
 
 /* Voice mode */
-.voice-overlay{position:fixed;inset:0;background:var(--navy);color:#fff;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;}
-.voice-overlay .vname{font-family:var(--font-head);font-size:15px;color:#9fb3c4;text-transform:uppercase;letter-spacing:1px;}
-.voice-overlay .vitem{font-family:var(--font-head);font-size:28px;margin:16px 0 6px;max-width:600px;}
-.voice-overlay .vhint{font-size:13px;color:#9fb3c4;margin-bottom:20px;}
-.voice-mic{width:70px;height:70px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;font-size:28px;margin-bottom:20px;transition:transform .2s;}
+.voice-overlay{position:fixed;top:0;left:0;right:0;bottom:auto;background:rgba(11,26,46,.1);color:#fff;z-index:60;display:flex;flex-direction:column;align-items:center;padding:16px 16px 20px;text-align:center;pointer-events:none;max-height:42vh;overflow:visible;}
+.voice-overlay > *{pointer-events:auto;}
+.voice-overlay .vname{font-family:var(--font-head);font-size:13px;color:#fff;text-transform:uppercase;letter-spacing:1px;background:rgba(11,26,46,.85);padding:5px 12px;border-radius:14px;}
+.voice-overlay .vitem{font-family:var(--font-head);font-size:20px;margin:12px 0 6px;max-width:600px;background:rgba(11,26,46,.85);padding:8px 16px;border-radius:8px;}
+.voice-overlay .vhint{font-size:12px;color:#cfe0ec;margin-bottom:14px;background:rgba(11,26,46,.7);padding:5px 12px;border-radius:14px;}
+.voice-mic{width:52px;height:52px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:12px;transition:transform .2s;box-shadow:0 2px 10px rgba(0,0,0,.4);}
 .voice-mic.listening{animation:pulse 1.1s infinite;}
+.voice-progress{font-family:var(--font-mono);font-size:11px;color:#fff;margin-top:6px;background:rgba(11,26,46,.75);padding:3px 10px;border-radius:12px;}
+.voice-close{position:fixed;top:16px;right:20px;background:rgba(11,26,46,.85);color:#fff;font-size:20px;border-radius:50%;width:34px;height:34px;z-index:61;}
 @keyframes pulse{0%{transform:scale(1);}50%{transform:scale(1.12);}100%{transform:scale(1);}}
-.voice-comment-box{background:#fff;color:var(--ink);padding:16px;border-radius:6px;max-width:480px;width:100%;margin-top:10px;}
-.voice-progress{font-family:var(--font-mono);font-size:12px;color:#9fb3c4;margin-top:16px;}
-.voice-close{position:absolute;top:16px;right:20px;background:transparent;color:#fff;font-size:22px;}
+.voice-comment-box{background:#fff;color:var(--ink);padding:16px;border-radius:6px;max-width:480px;width:100%;margin-top:10px;pointer-events:auto;}
 
 /* Tech check form */
 .tech-block{background:#fff;border:1px solid var(--line);padding:16px;margin-bottom:14px;}
@@ -323,7 +324,7 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
 <div class="topbar">
   <div class="brand">
     <div class="mark">CIS</div>
-    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.19.0</div></div>
+    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.22.0</div></div>
   </div>
   <div class="actions">
     <div id="syncStatus" class="sync-status ok">💾 Enregistré</div>
@@ -404,6 +405,60 @@ function defaultData(){
     vsav:[]
   }};
 }
+function performMaterialSoftReset(v){
+  // Remet "à vérifier" tout ce qui était conforme/complet — mais préserve intégralement les
+  // anomalies (manquant/périmé/HS) déjà signalées, qui ne doivent jamais disparaître silencieusement.
+  v.emplacements.forEach(emp=>{
+    emp.articles.forEach(a=>{
+      const hasChildren=isContainerArt(a);
+      if(hasChildren){
+        if(a.locked){ a.locked=false; a.lastCheck=''; a.checkedBy=''; }
+      } else if(a.status==='ok'){
+        a.status='verifier'; a.lastCheck=''; a.checkedBy='';
+      }
+      (a.sousArticles||[]).forEach(s=>{
+        if(s.status==='ok'){ s.status='verifier'; s.lastCheck=''; s.checkedBy=''; }
+      });
+    });
+  });
+}
+function resetMaterialCheckIfNeeded(v){
+  // La vérification matériel se réinitialise selon SON PROPRE cycle (quotidien = chaque jour,
+  // hebdomadaire/mensuel = chaque semaine/mois) — mais seulement ce qui était "conforme" ou "complet"
+  // repasse "à vérifier". Un manquant/périmé/HS resté non résolu N'EST JAMAIS effacé par ce mécanisme.
+  const hist=v.checkHistory||[]; if(!hist.length) return false;
+  const last=hist[hist.length-1];
+  const freq=v.checkFrequency||'hebdomadaire';
+  const today=todayStr();
+  let shouldReset=false;
+  if(freq==='quotidien'){
+    shouldReset = last.date<today;
+  } else if(freq==='mensuel'){
+    const occ=v.checkMonthlyOccurrence!==undefined?v.checkMonthlyOccurrence:'first';
+    const wd=v.checkMonthlyWeekday!==undefined?v.checkMonthlyWeekday:0;
+    const targetDate=monthlyOccurrenceDate(today,occ,wd);
+    shouldReset = last.date<targetDate && today>=targetDate;
+  } else {
+    const monday=mondayOfWeek(today);
+    shouldReset = last.date<monday;
+  }
+  if(!shouldReset) return false;
+  performMaterialSoftReset(v);
+  return true;
+}
+async function maybeRestartOnReopen(v){
+  // Si l'inventaire matériel du véhicule est déjà clôturé pour le cycle en cours (ex: déjà fait ce
+  // matin pour un véhicule quotidien), rouvrir "Vérifier" relance quand même une vérification fraîche
+  // — utile pour un contrôle demandé en supplément le soir. Les vraies anomalies restent affichées ;
+  // le pourcentage du tableau de bord, lui, ne bougera qu'à la prochaine clôture (voir displayedVehicleStats).
+  if(readOnlySkip(v)) return;
+  const due=checkDueInfo(v);
+  if(!due.due && v.checkHistory && v.checkHistory.length){
+    performMaterialSoftReset(v);
+    await saveState();
+  }
+}
+function readOnlySkip(v){ return isVehicleReadOnlyForMe(v) || v.outOfService; }
 function resetWeeklyTechCheckIfNeeded(v){
   // Les cases de la vérification engin se décochent automatiquement à chaque nouvelle semaine
   // (lundi) — l'agent doit revérifier activement et recocher, pas juste re-sauvegarder l'ancien état.
@@ -604,10 +659,14 @@ async function loadState(){
     if(res&&res.value){state=JSON.parse(res.value);}else{state=defaultData();await saveState();}
   }catch(e){state=defaultData();await saveState();}
   let anyWeeklyReset=false;
-  state.vehicles.forEach(v=>{ if(resetWeeklyTechCheckIfNeeded(v)) anyWeeklyReset=true; ensureVehicleShape(v); });
+  state.vehicles.forEach(v=>{
+    if(resetWeeklyTechCheckIfNeeded(v)) anyWeeklyReset=true;
+    if(resetMaterialCheckIfNeeded(v)) anyWeeklyReset=true;
+    ensureVehicleShape(v);
+  });
   ensureReservesShape();
-  // Si la remise à zéro hebdomadaire de la vérification engin a modifié au moins un véhicule,
-  // on sauvegarde immédiatement pour que ce soit visible par tous les appareils, pas seulement celui-ci.
+  // Si une remise à zéro (engin ou matériel) a modifié au moins un véhicule, on sauvegarde
+  // immédiatement pour que ce soit visible par tous les appareils, pas seulement celui-ci.
   if(anyWeeklyReset) await saveState();
   if(state.centres.length===0){
     const found=new Set();
@@ -798,6 +857,17 @@ function vehicleStats(v){
   let overall='ok'; if(manquant||perime||hs)overall='bad'; else if(verifier)overall='warn';
   return {total,ok,verifier,manquant,perime,hs,pct,overall,soon,overdue};
 }
+function displayedVehicleStats(v){
+  // Le tableau de bord affiche le résultat de la DERNIÈRE clôture, pas l'état en cours de retouche —
+  // pour qu'une réouverture "recommencer ce soir" ne fasse pas chuter l'affichage avant la nouvelle validation.
+  const hist=v.checkHistory||[];
+  const live=vehicleStats(v);
+  if(hist.length){
+    const last=hist[hist.length-1];
+    return Object.assign({},live,{pct:last.pct, overall:last.overall||(last.pct===100?'ok':last.pct>=60?'warn':'bad')});
+  }
+  return live;
+}
 function gaugeColor(pct){if(pct>=90)return'var(--green)';if(pct>=60)return'var(--amber)';return'var(--red)';}
 function vehicleGasTotals(v){
   let o2=0,hasO2=false,ari=0,hasAri=false;
@@ -823,7 +893,7 @@ function render(){
   else if(currentView.type==='hospitalTracking')renderHospitalTracking();
   else if(currentView.type==='help')renderHelp(currentView.tab);
 }
-const APP_VERSION='1.19.0'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.22.0'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -1103,9 +1173,10 @@ function renderDashboard(){
   const rcActive=roadClosures.filter(rc=>!rc.reopened);
   const rcOngoing=rcActive.filter(rc=>rc.dateDebut<=todayStr());
   const rcUpcoming=rcActive.filter(rc=>rc.dateDebut>todayStr());
-  html+=`<details class="emp-block" style="margin-top:16px;${rcOngoing.length?'border-left:4px solid var(--red);':'border-left:4px solid var(--steel);'}" open>
+  html+=`<details class="emp-block" style="margin-top:16px;${rcOngoing.length?'border-left:4px solid var(--red);':'border-left:4px solid var(--steel);'}">
     <summary style="cursor:pointer;padding:12px 14px;background:${rcOngoing.length?'#fdecec':'var(--paper)'};display:flex;justify-content:space-between;align-items:center;font-family:var(--font-head);font-size:15px;color:${rcOngoing.length?'var(--red-dark)':'var(--navy)'};">
-      <span>🚧 Arrêté de circulation / route barrée${rcActive.length?' ('+rcActive.length+')':''}</span>
+      <span>🚧 Arrêté de circulation / route barrée</span>
+      <span style="display:flex;gap:6px;">${rcOngoing.length?`<span class="tag" style="background:var(--red-dark);color:#fff;">${rcOngoing.length} en cours</span>`:''}${rcUpcoming.length?`<span class="tag" style="background:var(--steel);color:#fff;">${rcUpcoming.length} prévue(s)</span>`:''}</span>
     </summary>
     <div class="emp-body">
       <button class="btn small primary" id="addRoadClosureBtn" style="margin-bottom:10px;">➕ Signaler une route barrée</button>`;
@@ -1134,8 +1205,11 @@ function renderDashboard(){
   const upcomingAlerts=weeklyAlerts.filter(a=>a.severity==='upcoming');
   if(weeklyAlerts.length){
     const monday=mondayOfWeek(todayStr()); const sunday=new Date(monday); sunday.setDate(sunday.getDate()+6);
-    html+=`<details class="emp-block" style="margin-top:16px;${overdueAlerts.length?'border-left:4px solid var(--red);':'border-left:4px solid var(--amber);'}" open>
-      <summary style="cursor:pointer;padding:12px 14px;background:${overdueAlerts.length?'#fdecec':'#fff6e6'};display:flex;justify-content:space-between;align-items:center;font-family:var(--font-head);font-size:15px;color:${overdueAlerts.length?'var(--red-dark)':'var(--amber-dark)'};">📅 Cette semaine (${fmtDate(monday)} → ${fmtDate(sunday.toISOString().slice(0,10))})</summary>
+    html+=`<details class="emp-block" style="margin-top:16px;${overdueAlerts.length?'border-left:4px solid var(--red);':'border-left:4px solid var(--amber);'}">
+      <summary style="cursor:pointer;padding:12px 14px;background:${overdueAlerts.length?'#fdecec':'#fff6e6'};display:flex;justify-content:space-between;align-items:center;font-family:var(--font-head);font-size:15px;color:${overdueAlerts.length?'var(--red-dark)':'var(--amber-dark)'};">
+        <span>📅 Cette semaine (${fmtDate(monday)} → ${fmtDate(sunday.toISOString().slice(0,10))})</span>
+        <span style="display:flex;gap:6px;">${overdueAlerts.length?`<span class="tag" style="background:var(--red-dark);color:#fff;">${overdueAlerts.length} en retard</span>`:''}${upcomingAlerts.length?`<span class="tag" style="background:var(--amber-dark);color:#fff;">${upcomingAlerts.length} à prévoir</span>`:''}</span>
+      </summary>
       <div class="emp-body">`;
     if(overdueAlerts.length){
       html+=`<div style="font-size:11px;font-weight:700;color:var(--red-dark);text-transform:uppercase;margin-bottom:4px;">⛔ En retard (${overdueAlerts.length})</div>`;
@@ -1155,8 +1229,11 @@ function renderDashboard(){
   const maintOverdue=maintAlerts.filter(a=>a.severity==='overdue');
   const maintUpcoming=maintAlerts.filter(a=>a.severity==='upcoming');
   if(maintAlerts.length){
-    html+=`<details class="emp-block" style="margin-top:16px;${maintOverdue.length?'border-left:4px solid var(--red);':'border-left:4px solid var(--amber);'}" open>
-      <summary style="cursor:pointer;padding:12px 14px;background:${maintOverdue.length?'#fdecec':'#fff6e6'};display:flex;justify-content:space-between;align-items:center;font-family:var(--font-head);font-size:15px;color:${maintOverdue.length?'var(--red-dark)':'var(--amber-dark)'};">🔧 Contrôle technique & entretien (30 jours)</summary>
+    html+=`<details class="emp-block" style="margin-top:16px;${maintOverdue.length?'border-left:4px solid var(--red);':'border-left:4px solid var(--amber);'}">
+      <summary style="cursor:pointer;padding:12px 14px;background:${maintOverdue.length?'#fdecec':'#fff6e6'};display:flex;justify-content:space-between;align-items:center;font-family:var(--font-head);font-size:15px;color:${maintOverdue.length?'var(--red-dark)':'var(--amber-dark)'};">
+        <span>🔧 Contrôle technique & entretien (30 jours)</span>
+        <span style="display:flex;gap:6px;">${maintOverdue.length?`<span class="tag" style="background:var(--red-dark);color:#fff;">${maintOverdue.length} dépassé(s)</span>`:''}${maintUpcoming.length?`<span class="tag" style="background:var(--amber-dark);color:#fff;">${maintUpcoming.length} à venir</span>`:''}</span>
+      </summary>
       <div class="emp-body">`;
     if(maintOverdue.length){
       html+=`<div style="font-size:11px;font-weight:700;color:var(--red-dark);text-transform:uppercase;margin-bottom:4px;">⛔ Dépassés (${maintOverdue.length})</div>`;
@@ -1177,7 +1254,7 @@ function renderDashboard(){
   }else{
     html+='<div class="grid">';
     state.vehicles.forEach(v=>{
-      const s=vehicleStats(v);
+      const s=displayedVehicleStats(v);
       const due=checkDueInfo(v);
       const o2Total=vehicleGasTotals(v);
       html+=`
@@ -1230,7 +1307,12 @@ function renderDashboard(){
   });
   html+='</div>';
   app.innerHTML=html;
-  app.querySelectorAll('[data-open],[data-check]').forEach(el=>el.addEventListener('click',()=>{currentView={type:'check',vehicleId:el.dataset.open||el.dataset.check};render();}));
+  app.querySelectorAll('[data-open],[data-check]').forEach(el=>el.addEventListener('click',async()=>{
+    const vid=el.dataset.open||el.dataset.check;
+    const vh=state.vehicles.find(x=>x.id===vid);
+    if(vh) await maybeRestartOnReopen(vh);
+    currentView={type:'check',vehicleId:vid}; render();
+  }));
   app.querySelectorAll('[data-goto-vehicle]').forEach(el=>el.addEventListener('click',()=>{currentView={type:'check',vehicleId:el.dataset.gotoVehicle};render();}));
   app.querySelectorAll('[data-config]').forEach(el=>el.addEventListener('click',()=>requireAdmin(()=>{currentView={type:'config',vehicleId:el.dataset.config};render();})));
   app.querySelectorAll('[data-dup]').forEach(el=>el.addEventListener('click',()=>requireAdmin(()=>duplicateVehicle(el.dataset.dup))));
@@ -2132,7 +2214,7 @@ function openAssignBottleModal(cat,it){
     const target=s.subId?a.sousArticles.find(x=>x.id===s.subId):a;
     const oldNum=target.invNum;
     target.invNum=it.numero; target.volumeL=it.volumeL||target.volumeL; target.pressureBar=it.pressureBar||target.pressureBar;
-    syncBottleReserveLink(regType,oldNum,it.numero,s.vName+' — '+s.empName);
+    syncBottleReserveLink(regType,oldNum,it.numero,s.vName+' — '+s.empName+' — '+s.label);
     await saveState(); overlay.remove(); render();
     alert('Bouteille assignée à '+s.vName+' — '+s.empName+'.');
   });
@@ -2238,9 +2320,8 @@ function openReservePicker(v,empId,artId,subId){
     target.status='ok'; target.qtyMissing=0; target.lastCheck=todayStr(); target.checkedBy=currentCheckerLabel();
     if(isContainerArt(target)) target.locked=true; // conteneur : reverrouillé une fois remplacé
     addComment(target,'Remplacé depuis réserve « '+RESERVE_CATS[cat].label+' » : '+it.name+(extra||''));
-    // Traçabilité : indique sur quel engin/emplacement se trouve désormais cette référence de réserve
-    // (juste l'emplacement, pas le nom précis de l'article — elle peut être dans un kit ARI ou seule).
-    it.currentVehicleLabel=v.name+' — '+emp.name;
+    // Traçabilité : indique sur quel engin/emplacement/article se trouve désormais cette référence de réserve.
+    it.currentVehicleLabel=v.name+' — '+emp.name+' — '+target.name;
     return saveState();
   }
   function returnOldBottleIfNeeded(){
@@ -3172,7 +3253,7 @@ function bindConfigEvents(v){
   app.querySelectorAll('[data-set-o2num]').forEach(el=>el.addEventListener('change',async()=>{
     const[empId,artId]=el.dataset.setO2num.split(':'); const{a,emp}=findArt(v,empId+':'+artId);
     const oldNum=a.invNum; a.invNum=el.value.trim();
-    syncBottleReserveLink(a.regType,oldNum,a.invNum,v.name+' — '+emp.name);
+    syncBottleReserveLink(a.regType,oldNum,a.invNum,v.name+' — '+emp.name+' — '+a.name);
     await saveState(); render();
   }));
   app.querySelectorAll('[data-set-o2vol]').forEach(el=>el.addEventListener('change',async()=>{
@@ -3222,7 +3303,7 @@ function bindConfigEvents(v){
   app.querySelectorAll('[data-set-sub-invnum]').forEach(el=>el.addEventListener('change',async()=>{
     const[empId,artId,subId]=el.dataset.setSubInvnum.split(':'); const{a,emp}=findArt(v,empId+':'+artId);
     const sub=a.sousArticles.find(s=>s.id===subId); const oldNum=sub.invNum; sub.invNum=el.value.trim();
-    syncBottleReserveLink(sub.regType,oldNum,sub.invNum,v.name+' — '+emp.name);
+    syncBottleReserveLink(sub.regType,oldNum,sub.invNum,v.name+' — '+emp.name+' — '+a.name+' > '+sub.name);
     await saveState(); render();
   }));
   app.querySelectorAll('[data-set-sub-volume]').forEach(el=>el.addEventListener('change',async()=>{
@@ -3335,7 +3416,7 @@ function vehicleStatsDaily(v){
 async function closeVehicleCheck(v){
   const st=vehicleStats(v);
   v.checkHistory=v.checkHistory||[];
-  v.checkHistory.push({date:todayStr(),pct:st.pct,checkedBy:currentCheckerLabel()});
+  v.checkHistory.push({date:todayStr(),pct:st.pct,overall:st.overall,checkedBy:currentCheckerLabel()});
   if(v.checkHistory.length>50) v.checkHistory=v.checkHistory.slice(-50);
   await saveState();
   // Le nom de l'agent est réinitialisé une fois la vérification clôturée, pour que le prochain contrôle
@@ -3345,6 +3426,16 @@ async function closeVehicleCheck(v){
   const remaining=buildAnomaliesList(v);
   checkOpenEmps = remaining.length ? new Set(remaining.map(x=>x.empId)) : new Set();
   return st;
+}
+async function restartFullCheck(v){
+  v.emplacements.forEach(emp=>{
+    emp.articles.forEach(a=>{
+      a.status='verifier'; a.locked=false; a.lastCheck=''; a.checkedBy=''; a.qtyMissing=0;
+      (a.sousArticles||[]).forEach(s=>{ s.status='verifier'; s.lastCheck=''; s.checkedBy=''; s.qtyMissing=0; });
+    });
+  });
+  await saveState(); render();
+  alert('Inventaire réinitialisé — à refaire entièrement.');
 }
 async function closeDailyCheck(v){
   const st=vehicleStatsDaily(v);
@@ -3406,6 +3497,7 @@ function renderCheck(vehicleId){
         <button class="btn ghost small" id="orderBtn">🛒 Commande</button>
         ${readOnly?'':'<button class="btn ghost small" id="toConfigTab">Configurer</button>'}
         <button class="btn ghost small" id="printCheckBtn">🖨 Imprimer</button>
+        ${readOnly?'':'<button class="btn ghost small" id="restartCheckBtn" style="color:var(--red-dark);">🔄 Recommencer l\'inventaire</button>'}
       </div></div>
     </div>
   </div>
@@ -3559,6 +3651,11 @@ function renderCheck(vehicleId){
   if(vmFull) vmFull.addEventListener('click',()=>{ currentView={type:'check',vehicleId:v.id,mode:'full'}; render(); });
   const vmDaily=document.getElementById('viewModeDaily');
   if(vmDaily) vmDaily.addEventListener('click',()=>{ currentView={type:'check',vehicleId:v.id,mode:'daily'}; render(); });
+  const restartBtn=document.getElementById('restartCheckBtn');
+  if(restartBtn) restartBtn.addEventListener('click',()=>requireAdmin(()=>{
+    if(!confirm('Recommencer entièrement l\'inventaire de « '+v.name+' » ? Tous les statuts, y compris les anomalies en cours (manquant/périmé/HS), repasseront à "à vérifier". L\'historique déjà clôturé n\'est pas supprimé.')) return;
+    restartFullCheck(v);
+  }));
   app.querySelectorAll('[data-pick-reserve-art]').forEach(el=>el.addEventListener('click',()=>{
     const[empId,artId]=el.dataset.pickReserveArt.split(':'); openReservePicker(v,empId,artId,null);
   }));
@@ -3588,13 +3685,13 @@ function renderCheck(vehicleId){
   app.querySelectorAll('[data-set-check-o2num]').forEach(el=>el.addEventListener('change',async()=>{
     const[empId,artId]=el.dataset.setCheckO2num.split(':'); const{a,emp}=findArt(v,empId+':'+artId);
     const oldNum=a.invNum; a.invNum=el.value.trim();
-    syncBottleReserveLink(a.regType,oldNum,a.invNum,v.name+' — '+emp.name);
+    syncBottleReserveLink(a.regType,oldNum,a.invNum,v.name+' — '+emp.name+' — '+a.name);
     await saveState(); render();
   }));
   app.querySelectorAll('[data-set-check-subbottle-num]').forEach(el=>el.addEventListener('change',async()=>{
     const[empId,artId,subId]=el.dataset.setCheckSubbottleNum.split(':'); const{a,emp}=findArt(v,empId+':'+artId);
     const sub=a.sousArticles.find(s=>s.id===subId); const oldNum=sub.invNum; sub.invNum=el.value.trim();
-    syncBottleReserveLink(sub.regType,oldNum,sub.invNum,v.name+' — '+emp.name);
+    syncBottleReserveLink(sub.regType,oldNum,sub.invNum,v.name+' — '+emp.name+' — '+a.name+' > '+sub.name);
     await saveState(); render();
   }));
   app.querySelectorAll('[data-set-check-subbottle-pres]').forEach(el=>el.addEventListener('change',async()=>{
@@ -3839,6 +3936,9 @@ let voiceState=null;
 let voiceMicStream=null;
 let voiceResumeMap={};
 async function startVoiceInventory(v){
+  requireChecker({vehicleId:v.id,type:'material'},()=>startVoiceInventoryReal(v));
+}
+async function startVoiceInventoryReal(v){
   if(!('speechSynthesis' in window)){alert('La synthèse vocale n\'est pas disponible sur ce navigateur. Utilise Chrome sur Android ou sur ordinateur.');return;}
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){alert('La reconnaissance vocale n\'est pas disponible sur ce navigateur (nécessite Chrome + autorisation micro).');return;}
@@ -4001,6 +4101,7 @@ async function voiceHandleAnswer(txt){
     needsComment = (answer==='manquant'||answer==='perime'||answer==='hs');
   }
   await saveState();
+  render(); // met à jour l'écran de vérification en direct, visible sous l'overlay vocal transparent
   if(needsComment){
     speak('Voulez-vous ajouter un commentaire ?',()=>listenOnce(t=>voiceHandleCommentChoice(t)));
   } else {
@@ -4033,6 +4134,7 @@ async function voiceHandleCommentText(txt,retryCount){
   const{a}=findArt(v,item.empId+':'+item.artId);
   addComment(a,txt);
   await saveState();
+  render();
   speak('Commentaire enregistré.',()=>{voiceState.index++; voiceAskCurrentItem();});
 }
 
