@@ -283,6 +283,8 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
 .voice-progress{font-family:var(--font-mono);font-size:11px;color:#fff;margin-top:6px;background:rgba(11,26,46,.75);padding:3px 10px;border-radius:12px;}
 .voice-close{position:fixed;top:16px;right:20px;background:rgba(11,26,46,.85);color:#fff;font-size:20px;border-radius:50%;width:34px;height:34px;z-index:61;}
 @keyframes pulse{0%{transform:scale(1);}50%{transform:scale(1.12);}100%{transform:scale(1);}}
+@keyframes blinkAlert{0%,100%{opacity:1;}50%{opacity:.35;}}
+.blink-alert{animation:blinkAlert 1.1s infinite;font-weight:700;}
 .voice-comment-box{background:#fff;color:var(--ink);padding:16px;border-radius:6px;max-width:480px;width:100%;margin-top:10px;pointer-events:auto;}
 
 /* Tech check form */
@@ -333,7 +335,7 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
 <div class="topbar">
   <div class="brand">
     <div class="mark">CIS</div>
-    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.27.0</div></div>
+    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.28.0</div></div>
   </div>
   <div class="actions">
     <div id="syncStatus" class="sync-status ok">💾 Enregistré</div>
@@ -428,9 +430,13 @@ function performMaterialSoftReset(v){
         if(a.locked){ a.locked=false; a.lastCheck=''; a.checkedBy=''; }
       } else if(a.status==='ok'){
         a.status='verifier'; a.lastCheck=''; a.checkedBy='';
+        if(a.regType==='O2'||a.regType==='ARI') a.pressureBar=''; // pression réelle à remesurer à chaque cycle
       }
       (a.sousArticles||[]).forEach(s=>{
-        if(s.status==='ok'){ s.status='verifier'; s.lastCheck=''; s.checkedBy=''; }
+        if(s.status==='ok'){
+          s.status='verifier'; s.lastCheck=''; s.checkedBy='';
+          if(s.regType==='O2'||s.regType==='ARI') s.pressureBar='';
+        }
       });
     });
   });
@@ -519,6 +525,7 @@ function ensureVehicleShape(v){
     if(a.photos===undefined)a.photos=[];
     if(a.volumeL===undefined)a.volumeL='';
     if(a.pressureBar===undefined)a.pressureBar='';
+    if(a.nominalPressure===undefined)a.nominalPressure=a.regType==='ARI'?300:(a.regType==='O2'?200:'');
     if(a.isContainer===undefined) a.isContainer=!!(a.sousArticles&&a.sousArticles.length);
     if(a.dailyCheck===undefined) a.dailyCheck=false;
     if(a.wrongLocation===undefined) a.wrongLocation=false;
@@ -531,6 +538,7 @@ function ensureVehicleShape(v){
       if(s.invNum===undefined)s.invNum='';
       if(s.volumeL===undefined)s.volumeL='';
       if(s.pressureBar===undefined)s.pressureBar='';
+      if(s.nominalPressure===undefined)s.nominalPressure=s.regType==='ARI'?300:(s.regType==='O2'?200:'');
     });
   });});
   return v;
@@ -571,6 +579,9 @@ function ensureReservesShape(){
       if(it.volumeL===undefined)it.volumeL='';
       if(it.pressureBar===undefined)it.pressureBar='';
       if(it.trackMode===undefined)it.trackMode='stock';
+      if(it.archived===undefined)it.archived=false;
+      if(it.archivedDate===undefined)it.archivedDate='';
+      if(it.archivedNote===undefined)it.archivedNote='';
       if(it.location===undefined)it.location='stock';
       if(it.currentVehicleLabel===undefined)it.currentVehicleLabel='';
     });
@@ -1079,7 +1090,7 @@ function render(){
   else if(currentView.type==='hospitalTracking')renderHospitalTracking();
   else if(currentView.type==='help')renderHelp(currentView.tab);
 }
-const APP_VERSION='1.27.0'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.28.0'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -1281,8 +1292,9 @@ function buildMaintenanceAlerts(){
     [['ctDate','Contrôle technique'],['vidangeDate','Vidange / entretien']].forEach(([field,label])=>{
       const d=t[field];
       if(!d) return;
-      if(d<today) alerts.push({vehicleId:v.id,vehicleName:v.name,type:label,label:'Dépassé depuis le '+fmtDate(d),severity:'overdue'});
-      else if(d<=horizonStr) alerts.push({vehicleId:v.id,vehicleName:v.name,type:label,label:'Prévu le '+fmtDate(d),severity:'upcoming'});
+      const daysLeft=daysUntil(d);
+      if(d<today) alerts.push({vehicleId:v.id,vehicleName:v.name,type:label,label:'Dépassé depuis le '+fmtDate(d),severity:'overdue',critical:true});
+      else if(d<=horizonStr) alerts.push({vehicleId:v.id,vehicleName:v.name,type:label,label:'Prévu le '+fmtDate(d),severity:'upcoming',critical:daysLeft<=15});
     });
   });
   return alerts;
@@ -1483,13 +1495,13 @@ function renderDashboard(){
     if(maintOverdue.length){
       html+=`<div style="font-size:11px;font-weight:700;color:var(--red-dark);text-transform:uppercase;margin-bottom:4px;">⛔ Dépassés (${maintOverdue.length})</div>`;
       maintOverdue.forEach(a=>{
-        html+=`<div class="article-row" style="grid-template-columns:1fr;padding:6px 0;"><div style="font-size:12.5px;cursor:pointer;" data-goto-vehicle="${a.vehicleId}"><b>${escapeHtml(a.vehicleName)}</b> — ${escapeHtml(a.type)} : ${escapeHtml(a.label)}</div></div>`;
+        html+=`<div class="article-row ${a.critical?'blink-alert':''}" style="grid-template-columns:1fr;padding:6px 0;"><div style="font-size:12.5px;cursor:pointer;" data-goto-vehicle="${a.vehicleId}"><b>${escapeHtml(a.vehicleName)}</b> — ${escapeHtml(a.type)} : ${escapeHtml(a.label)}</div></div>`;
       });
     }
     if(maintUpcoming.length){
       html+=`<div style="font-size:11px;font-weight:700;color:var(--amber-dark);text-transform:uppercase;margin:10px 0 4px;">📌 À venir sous 30 jours (${maintUpcoming.length})</div>`;
       maintUpcoming.forEach(a=>{
-        html+=`<div class="article-row" style="grid-template-columns:1fr;padding:6px 0;"><div style="font-size:12.5px;cursor:pointer;" data-goto-vehicle="${a.vehicleId}"><b>${escapeHtml(a.vehicleName)}</b> — ${escapeHtml(a.type)} : ${escapeHtml(a.label)}</div></div>`;
+        html+=`<div class="article-row ${a.critical?'blink-alert':''}" style="grid-template-columns:1fr;padding:6px 0;"><div style="font-size:12.5px;cursor:pointer;" data-goto-vehicle="${a.vehicleId}"><b>${escapeHtml(a.vehicleName)}</b> — ${escapeHtml(a.type)} : ${escapeHtml(a.label)}${a.critical?' <span class="tag" style="background:var(--red-dark);color:#fff;">≤ 15 jours</span>':''}</div></div>`;
       });
     }
     html+=`</div></details>`;
@@ -1793,12 +1805,35 @@ function openAddReserveItemModal(cat,isBottleCat){
     await saveState(); overlay.remove(); render();
   });
 }
+function openArchiveModal(cat){
+  const items=(state.reserves[cat]||[]).filter(it=>it.archived).sort((a,b)=>(b.archivedDate||'').localeCompare(a.archivedDate||''));
+  const overlay=document.createElement('div'); overlay.className='overlay';
+  overlay.innerHTML=`<div class="modal wide"><h3>📦 Archive — ${RESERVE_CATS[cat].label}</h3>
+    <p style="font-size:12px;color:var(--muted);">Bouteilles reparties vides vers la pharmacie départementale — conservées ici pour garder une trace, grisées et retirées de la liste active.</p>
+    <div style="max-height:400px;overflow-y:auto;">${items.map(it=>`
+      <div class="article-row" style="grid-template-columns:1fr 100px;opacity:.6;">
+        <div style="font-size:12.5px;">${escapeHtml(it.name)}${it.numero?' — n° '+escapeHtml(it.numero):''}<br><span class="article-sub">Repartie le ${fmtDate(it.archivedDate)}${it.archivedNote?' — '+escapeHtml(it.archivedNote):''}</span></div>
+        <button class="btn small ghost" data-unarchive="${it.id}">↩ Remettre en stock</button>
+      </div>`).join('')||'<p style="font-size:12.5px;color:var(--muted);">Aucune bouteille archivée.</p>'}</div>
+    <div class="modal-actions"><button class="btn primary" id="archiveClose">Fermer</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  document.getElementById('archiveClose').addEventListener('click',()=>overlay.remove());
+  overlay.querySelectorAll('[data-unarchive]').forEach(btn=>btn.addEventListener('click',()=>requireAdmin(async()=>{
+    const it=(state.reserves[cat]||[]).find(x=>x.id===btn.dataset.unarchive); if(!it)return;
+    it.archived=false; it.archivedDate=''; it.archivedNote=''; it.qty=1; it.pressureBar='';
+    addComment(it,'Remise en stock depuis l\'archive le '+fmtDate(todayStr()));
+    await saveState(); overlay.remove(); render();
+  })));
+}
 function renderReserve(cat,search,sort){
   const meta=RESERVE_CATS[cat]; if(!meta){currentView={type:'dashboard'};return render();}
   const allItems=state.reserves[cat]||[];
+  const activeItems=allItems.filter(it=>!it.archived);
+  const archivedItems=allItems.filter(it=>it.archived);
   const isBottleCat = cat==='oxygene'||cat==='ari';
   search=search||'';
-  sort=sort||'name_asc';
+  sort=sort||(isBottleCat?'location':'name_asc');
   let reservePage=1;
 
   const sortItems=(arr)=>{
@@ -1816,21 +1851,17 @@ function renderReserve(cat,search,sort){
 
   const buildListHtml=(filterText,sortVal)=>{
     const sn=normalizeTxt(filterText||'');
-    let items=sn?allItems.filter(it=>normalizeTxt(it.name).includes(sn)||normalizeTxt(it.numero||'').includes(sn)):allItems.slice();
+    let items=sn?activeItems.filter(it=>normalizeTxt(it.name).includes(sn)||normalizeTxt(it.numero||'').includes(sn)):activeItems.slice();
     sort=sortVal||sort;
-    items=sortItems(items);
-    const PAGE_SIZE=60;
-    const pageItems=items.slice(0,reservePage*PAGE_SIZE);
-    let h='';
-    if(!items.length){ h+=`<p style="font-size:12.5px;color:var(--muted);padding:10px 0;">Aucune référence ne correspond à « ${escapeHtml(filterText)} ».</p>`; }
-    pageItems.forEach(it=>{
+    const renderRow=it=>{
       const isUnique = isBottleCat || it.trackMode==='unique';
       const low = !isUnique && it.qtyMin>0 && it.qty<it.qtyMin;
       const inRepair = it.location==='reparation';
-      h+=`<div class="article-row" data-item="${it.id}" style="grid-template-columns:${isUnique?'1fr 130px 30px 30px':'1fr 70px 70px 30px 30px'};">
+      return `<div class="article-row" data-item="${it.id}" style="grid-template-columns:${isUnique?'1fr 130px 30px 30px':'1fr 70px 70px 30px 30px'};">
         <div>
           <div class="article-name">${escapeHtml(it.name)} ${low?'<span class="reg-badge overdue">Sous seuil</span>':''}${isBottleCat&&it.volumeL?` <span class="tag">${escapeHtml(it.volumeL)} L</span>`:''}${isBottleCat&&it.pressureBar?` <span class="tag">${escapeHtml(it.pressureBar)} bar</span>`:''}${isBottleCat&&it.pressureBar!==''&&parseFloat(it.pressureBar)<=0?` <span class="reg-badge overdue">Vide — ${cat==='ari'?'à recharger sur place':'à retourner en pharmacie'}</span>`:''}${inRepair?' <span class="reg-badge overdue">🔧 En réparation</span>':''}</div>
           ${cat==='ari'&&it.pressureBar!==''&&parseFloat(it.pressureBar)<=0?`<div class="field-inline" style="margin-top:6px;"><button class="btn small primary" data-refill-ari="${it.id}">✓ Bouteille rechargée (remettre à 300 bar)</button></div>`:''}
+          ${cat==='oxygene'&&it.pressureBar!==''&&parseFloat(it.pressureBar)<=0?`<div class="field-inline" style="margin-top:6px;"><button class="btn small primary" data-archive-o2="${it.id}">📤 Repart vide vers la pharmacie départementale</button></div>`:''}
           ${renderCommentsBlock(it,'r:'+cat+':'+it.id)}
           ${it.currentVehicleLabel&&it.qty===0?`<div class="comment-text" style="background:#e8f0fb;border-color:#b8d0ef;color:var(--navy);"><b>📍 Sur :</b> ${escapeHtml(it.currentVehicleLabel)}</div>`:''}
           <div class="field-inline">
@@ -1861,9 +1892,33 @@ function renderReserve(cat,search,sort){
         <button class="icon-btn" title="Dupliquer" data-r-dup="${it.id}">⧉</button>
         <button class="del-btn" data-r-del="${it.id}">✕</button>
       </div>`;
-    });
-    if(items.length>pageItems.length){
-      h+=`<button class="btn ghost" id="reserveShowMoreBtn" style="width:100%;margin-top:8px;">Afficher plus (${items.length-pageItems.length} restant(s) sur ${items.length})</button>`;
+    };
+    let h='';
+    if(!items.length){ h+=`<p style="font-size:12.5px;color:var(--muted);padding:10px 0;">Aucune référence ne correspond à « ${escapeHtml(filterText)} ».</p>`; }
+    if(isBottleCat && sort==='location' && !sn){
+      // Regroupement par emplacement (stock / chaque véhicule / réparation), puis par contenance et pression nominale à l'intérieur de chaque groupe.
+      const byBottleSort=(a,b)=> (parseFloat(a.volumeL)||0)-(parseFloat(b.volumeL)||0) || (parseFloat(a.pressureBar)||0)-(parseFloat(b.pressureBar)||0) || a.name.localeCompare(b.name,'fr');
+      const groups={}; const order=[];
+      const pushTo=(key,it)=>{ if(!groups[key]){groups[key]=[];order.push(key);} groups[key].push(it); };
+      items.forEach(it=>{
+        if(it.location==='reparation') pushTo('🔧 En réparation',it);
+        else if(it.currentVehicleLabel && it.qty===0) pushTo('🚒 '+it.currentVehicleLabel.split(' — ')[0],it);
+        else pushTo('📦 En stock (réserve)',it);
+      });
+      order.sort((a,b)=> a==='📦 En stock (réserve)'?-1: b==='📦 En stock (réserve)'?1: a==='🔧 En réparation'?1: b==='🔧 En réparation'?-1: a.localeCompare(b,'fr'));
+      order.forEach(key=>{
+        const grp=groups[key].sort(byBottleSort);
+        h+=`<div style="font-size:11.5px;font-weight:700;color:var(--navy);text-transform:uppercase;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--line);">${key} (${grp.length})</div>`;
+        grp.forEach(it=>{ h+=renderRow(it); });
+      });
+    } else {
+      items=sortItems(items);
+      const PAGE_SIZE=60;
+      const pageItems=items.slice(0,reservePage*PAGE_SIZE);
+      pageItems.forEach(it=>{ h+=renderRow(it); });
+      if(items.length>pageItems.length){
+        h+=`<button class="btn ghost" id="reserveShowMoreBtn" style="width:100%;margin-top:8px;">Afficher plus (${items.length-pageItems.length} restant(s) sur ${items.length})</button>`;
+      }
     }
     if(isBottleCat){
       const defaultPressure = cat==='oxygene'?200:300;
@@ -2001,6 +2056,13 @@ function renderReserve(cat,search,sort){
       addComment(it,'Rechargée le '+fmtDate(todayStr())+' (300 bar)');
       await saveState(); render();
     }));
+    app.querySelectorAll('[data-archive-o2]').forEach(el=>el.addEventListener('click',async()=>{
+      const it=allItems.find(x=>x.id===el.dataset.archiveO2); if(!it)return;
+      if(!confirm('Marquer « '+it.name+' » comme repartie vide vers la pharmacie départementale ? Elle sera grisée et déplacée dans l\'archive.')) return;
+      it.archived=true; it.archivedDate=todayStr(); it.archivedNote='Repartie vide vers la pharmacie départementale';
+      addComment(it,'Repartie vide vers la pharmacie départementale le '+fmtDate(todayStr()));
+      await saveState(); render();
+    }));
     app.querySelectorAll('[data-set-r-cat]').forEach(el=>el.addEventListener('change',()=>requireAdmin(async()=>{
       const newCat=el.value; if(newCat===cat)return;
       const it=allItems.find(x=>x.id===el.dataset.setRCat); if(!it)return;
@@ -2016,16 +2078,18 @@ function renderReserve(cat,search,sort){
 
   let html=`<div class="back-link" id="backLink">← Retour au tableau de bord</div>
   <div class="detail-header">
-    <div class="detail-title"><h2>${meta.icon} ${meta.label}</h2><div class="code">${allItems.length} référence(s) · ${allItems.reduce((s,it)=>s+it.qty,0)} unité(s) en stock</div></div>
+    <div class="detail-title"><h2>${meta.icon} ${meta.label}</h2><div class="code">${activeItems.length} référence(s) · ${activeItems.reduce((s,it)=>s+it.qty,0)} unité(s) en stock</div></div>
     <div class="detail-actions">
       <button class="btn primary small" id="addReserveItemBtn">➕ Ajouter un élément</button>
       ${cat==='pharmacie'?'<button class="btn ghost small" id="pharmaOrderBtn2">🛒 Commande pharmacie</button><button class="btn ghost small" id="pharmaReceiveBtn">📦 Réceptionner une commande</button>':''}
       ${cat==='oxygene'?'<button class="btn ghost small" id="oxyReceiveBtn">📦 Réceptionner une commande</button>':''}
+      ${archivedItems.length?`<button class="btn ghost small" id="showArchiveBtn">📦 Archive (${archivedItems.length})</button>`:''}
     </div>
   </div>
   <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
     <div class="field" style="max-width:320px;flex:1;"><label>Recherche</label><input id="reserveSearch" placeholder="${isBottleCat?'Rechercher par numéro de bouteille…':'Rechercher…'}" value="${escapeHtml(search)}"></div>
     <div class="field" style="max-width:260px;"><label>Trier par</label><select id="reserveSort">
+      ${isBottleCat?`<option value="location" ${sort==='location'?'selected':''}>Par emplacement (défaut)</option>`:''}
       <option value="name_asc" ${sort==='name_asc'?'selected':''}>Alphabétique (A → Z)</option>
       <option value="name_desc" ${sort==='name_desc'?'selected':''}>Alphabétique (Z → A)</option>
       <option value="qty_desc" ${sort==='qty_desc'?'selected':''}>Quantité réelle (décroissant)</option>
@@ -2041,6 +2105,7 @@ function renderReserve(cat,search,sort){
   document.getElementById('addReserveItemBtn').addEventListener('click',()=>openAddReserveItemModal(cat,isBottleCat));
   const prb=document.getElementById('pharmaReceiveBtn'); if(prb)prb.addEventListener('click',openPharmaReceiveModal);
   const orb=document.getElementById('oxyReceiveBtn'); if(orb)orb.addEventListener('click',openOxygenReceiveModal);
+  const showArchB=document.getElementById('showArchiveBtn'); if(showArchB)showArchB.addEventListener('click',()=>openArchiveModal(cat));
   bindListEvents();
   document.getElementById('reserveSearch').addEventListener('input',e=>{
     reservePage=1;
@@ -2460,7 +2525,7 @@ function openAssignBottleModal(cat,it){
     const{a}=findArt(v,s.empId+':'+s.artId);
     const target=s.subId?a.sousArticles.find(x=>x.id===s.subId):a;
     const oldNum=target.invNum;
-    target.invNum=it.numero; target.volumeL=it.volumeL||target.volumeL; target.pressureBar=it.pressureBar||target.pressureBar;
+    target.invNum=it.numero; target.volumeL=it.volumeL||target.volumeL; target.nominalPressure=it.pressureBar||target.nominalPressure; target.pressureBar='';
     syncBottleReserveLink(regType,oldNum,it.numero,s.vName+' — '+s.empName+' — '+s.label);
     await saveState(); overlay.remove(); render();
     alert('Bouteille assignée à '+s.vName+' — '+s.empName+'.');
@@ -2599,7 +2664,7 @@ function openReservePicker(v,empId,artId,subId){
           const label=' (bouteille n° '+it.numero+')';
           const newInvNum=it.numero, newVol=it.volumeL||'', newPres=it.pressureBar||'';
           finalizePickBottle(it,label).then(()=>{
-            target.invNum=newInvNum; target.volumeL=newVol; target.pressureBar=newPres;
+            target.invNum=newInvNum; target.volumeL=newVol; target.nominalPressure=newPres||target.nominalPressure; target.pressureBar='';
             saveState().then(()=>{overlay.remove();render();});
           });
         } else {
@@ -3805,7 +3870,10 @@ function renderCheck(vehicleId){
         if(mode==='daily' && !a.dailyCheck) return;
         const hasChildren=isContainerArt(a);
         const isBottle=a.regType==='O2'||a.regType==='ARI';
-        const o2Liters=isBottle && a.volumeL && a.pressureBar ? Math.round(parseFloat(a.volumeL)*parseFloat(a.pressureBar)) : null;
+        const theoLiters=isBottle && a.volumeL && a.nominalPressure ? Math.round(parseFloat(a.volumeL)*parseFloat(a.nominalPressure)) : null;
+        const realLiters=isBottle && a.volumeL && a.pressureBar ? Math.round(parseFloat(a.volumeL)*parseFloat(a.pressureBar)) : null;
+        const pressLow=isBottle && a.pressureBar!=='' && a.nominalPressure && parseFloat(a.pressureBar)<parseFloat(a.nominalPressure)*0.9;
+        const pressMissing=isBottle && a.pressureBar==='';
         const gasLabel=a.regType==='ARI'?'L air':'L O2';
         const dis=readOnly?' disabled':'';
         html+=`<div class="check-article" ${readOnly?'':`draggable="true" data-check-art-drag="${emp.id}:${a.id}"`}>
@@ -3813,7 +3881,12 @@ function renderCheck(vehicleId){
             <button class="comment-btn ${a.comments&&a.comments.length?'has-comment':''}"${dis} title="Ajouter un commentaire" data-comment-art="${emp.id}:${a.id}">💬</button>
             <button class="comment-btn ${a.wrongLocation?'has-comment':''}"${dis} title="${a.wrongLocation?'Retirer le signalement':'Signaler un mauvais emplacement'}" data-wrong-loc-art="${emp.id}:${a.id}">📍</button>
           </div>
-          ${isBottle?`<div class="field-inline"><label>N° bouteille</label><input value="${escapeHtml(a.invNum||'')}"${dis} style="width:130px;" placeholder="numéro" data-set-check-o2num="${emp.id}:${a.id}"><label>Pression (bar)</label><input type="number" min="0"${dis} style="width:65px;" value="${a.pressureBar||''}" data-set-check-o2pres="${emp.id}:${a.id}">${a.volumeL?`<span class="article-sub">× ${a.volumeL} L</span>`:''}${o2Liters!==null?`<span class="tag">≈ ${o2Liters} ${gasLabel} disponible</span>`:'<span class="article-sub">(renseigner le volume en Configurer)</span>'}${readOnly?'':`<button class="btn small ghost" data-pick-reserve-art-any="${emp.id}:${a.id}">🔁 Depuis réserve</button>`}</div>`:''}
+          ${isBottle?`<div class="field-inline"><label>N° bouteille</label><input value="${escapeHtml(a.invNum||'')}"${dis} style="width:130px;" placeholder="numéro" data-set-check-o2num="${emp.id}:${a.id}">
+            <label>Pression réelle (bar)</label><input type="number" min="0"${dis} style="width:65px;${pressLow?'background:#fdecec;border-color:var(--red-dark);color:var(--red-dark);font-weight:700;':''}" value="${a.pressureBar||''}" placeholder="à mesurer" data-set-check-o2pres="${emp.id}:${a.id}">
+            ${a.volumeL?`<span class="article-sub">× ${a.volumeL} L</span>`:''}
+            ${theoLiters!==null?`<span class="article-sub">Théorique (${a.nominalPressure} bar) : ${theoLiters} ${gasLabel}</span>`:''}
+            ${realLiters!==null?`<span class="tag" style="${pressLow?'background:var(--red-dark);':''}">≈ ${realLiters} ${gasLabel} réel${pressLow?' — sous 90% du nominal':''}</span>`:(a.volumeL?'<span class="article-sub">(pression réelle non renseignée)</span>':'<span class="article-sub">(renseigner le volume en Configurer)</span>')}
+            ${readOnly?'':`<button class="btn small ghost" data-pick-reserve-art-any="${emp.id}:${a.id}">🔁 Depuis réserve</button>`}</div>`:''}
           ${renderCommentsBlock(a,'art:'+emp.id+':'+a.id)}
           ${(a.photos||[]).length?`<div class="check-art-photos">${a.photos.map(p=>`<img src="${p}" style="cursor:pointer;" onclick="openPhotoLightbox(this.src)">`).join('')}</div>`:''}`;
         if(hasChildren){
@@ -3823,10 +3896,17 @@ function renderCheck(vehicleId){
             a.sousArticles.forEach(sub=>{
               const subReg=isSoonOrOverdue(sub.expiry);
               const subIsBottle=sub.regType==='O2'||sub.regType==='ARI';
-              const subO2Liters=subIsBottle && sub.volumeL && sub.pressureBar ? Math.round(parseFloat(sub.volumeL)*parseFloat(sub.pressureBar)) : null;
+              const subTheoLiters=subIsBottle && sub.volumeL && sub.nominalPressure ? Math.round(parseFloat(sub.volumeL)*parseFloat(sub.nominalPressure)) : null;
+              const subRealLiters=subIsBottle && sub.volumeL && sub.pressureBar ? Math.round(parseFloat(sub.volumeL)*parseFloat(sub.pressureBar)) : null;
+              const subPressLow=subIsBottle && sub.pressureBar!=='' && sub.nominalPressure && parseFloat(sub.pressureBar)<parseFloat(sub.nominalPressure)*0.9;
               const subGasLabel=sub.regType==='ARI'?'L air':'L O2';
               html+=`<div class="check-sub-row"><span>${escapeHtml(sub.name)} <span class="article-sub">(qté ${sub.qty})</span> ${sub.regType?`<span class="reg-badge">${REG_TYPES[sub.regType]}</span>`:''} ${sub.expiry?`<span class="reg-badge ${subReg==='overdue'?'overdue':(subReg==='soon'?'soon':'')}">Péremption ${fmtDate(sub.expiry)}</span>`:''}${sub.wrongLocation?' <span class="reg-badge overdue">📍 Mauvais emplacement</span>':''} <button class="comment-btn ${sub.comments&&sub.comments.length?'has-comment':''}"${dis} title="Ajouter un commentaire" data-comment-sub="${emp.id}:${a.id}:${sub.id}">💬</button> <button class="comment-btn ${sub.wrongLocation?'has-comment':''}"${dis} title="${sub.wrongLocation?'Retirer le signalement':'Signaler un mauvais emplacement'}" data-wrong-loc-sub="${emp.id}:${a.id}:${sub.id}">📍</button> ${subIsBottle?'':`<button class="comment-btn ${sub.expiry?'has-comment':''}"${dis} title="${sub.expiry?'Modifier la péremption':'Ajouter une péremption (si applicable)'}" data-set-sub-expiry-btn="${emp.id}:${a.id}:${sub.id}">📅</button>`}</span>
-                ${subIsBottle?`<div class="field-inline" style="margin-top:0;width:100%;"><label>N° bouteille</label><input value="${escapeHtml(sub.invNum||'')}"${dis} style="width:120px;" placeholder="numéro" data-set-check-subbottle-num="${emp.id}:${a.id}:${sub.id}"><label>Pression (bar)</label><input type="number" min="0"${dis} style="width:65px;" value="${sub.pressureBar||''}" data-set-check-subbottle-pres="${emp.id}:${a.id}:${sub.id}">${sub.volumeL?`<span class="article-sub">× ${sub.volumeL} L</span>`:''}${subO2Liters!==null?`<span class="tag">≈ ${subO2Liters} ${subGasLabel} disponible</span>`:''}${readOnly?'':`<button class="btn small ghost" data-pick-reserve-sub-any="${emp.id}:${a.id}:${sub.id}">🔁 Changer depuis réserve</button>`}</div>`:''}
+                ${subIsBottle?`<div class="field-inline" style="margin-top:0;width:100%;"><label>N° bouteille</label><input value="${escapeHtml(sub.invNum||'')}"${dis} style="width:120px;" placeholder="numéro" data-set-check-subbottle-num="${emp.id}:${a.id}:${sub.id}">
+                <label>Pression réelle (bar)</label><input type="number" min="0"${dis} style="width:65px;${subPressLow?'background:#fdecec;border-color:var(--red-dark);color:var(--red-dark);font-weight:700;':''}" value="${sub.pressureBar||''}" placeholder="à mesurer" data-set-check-subbottle-pres="${emp.id}:${a.id}:${sub.id}">
+                ${sub.volumeL?`<span class="article-sub">× ${sub.volumeL} L</span>`:''}
+                ${subTheoLiters!==null?`<span class="article-sub">Théorique (${sub.nominalPressure} bar) : ${subTheoLiters} ${subGasLabel}</span>`:''}
+                ${subRealLiters!==null?`<span class="tag" style="${subPressLow?'background:var(--red-dark);':''}">≈ ${subRealLiters} ${subGasLabel} réel${subPressLow?' — sous 90% du nominal':''}</span>`:(sub.volumeL?'<span class="article-sub">(pression réelle non renseignée)</span>':'')}
+                ${readOnly?'':`<button class="btn small ghost" data-pick-reserve-sub-any="${emp.id}:${a.id}:${sub.id}">🔁 Changer depuis réserve</button>`}</div>`:''}
                 <div class="check-status-buttons check-sub-status-buttons">
                 ${Object.keys(STATUS).map(k=>`<button class="check-status-btn ${sub.status===k?'active '+k:''}"${dis} data-set-sub-status="${emp.id}:${a.id}:${sub.id}:${k}">${STATUS[k].short}</button>`).join('')}
                 </div></div>
@@ -4040,6 +4120,11 @@ function renderCheck(vehicleId){
   })));
   app.querySelectorAll('[data-set-art-status]').forEach(el=>el.addEventListener('click',()=>requireChecker({vehicleId:v.id,type:'material'},()=>{
     const[empId,artId,status]=el.dataset.setArtStatus.split(':'); const{a}=findArt(v,empId+':'+artId);
+    const isBottle=a.regType==='O2'||a.regType==='ARI';
+    if(status==='ok' && isBottle && a.pressureBar===''){
+      alert('Renseigne la pression réelle mesurée avant de valider cette bouteille comme conforme.');
+      return;
+    }
     a.status=status; a.lastCheck=todayStr(); a.checkedBy=currentCheckerLabel();
     if((status==='manquant'||status==='perime')&&!a.qtyMissing) a.qtyMissing=a.qty;
     if(status!=='manquant'&&status!=='perime') a.qtyMissing=0;
@@ -4047,7 +4132,13 @@ function renderCheck(vehicleId){
   })));
   app.querySelectorAll('[data-set-sub-status]').forEach(el=>el.addEventListener('click',()=>requireChecker({vehicleId:v.id,type:'material'},()=>{
     const[empId,artId,subId,status]=el.dataset.setSubStatus.split(':'); const{a}=findArt(v,empId+':'+artId);
-    const sub=a.sousArticles.find(s=>s.id===subId); sub.status=status; sub.lastCheck=todayStr(); sub.checkedBy=currentCheckerLabel();
+    const sub=a.sousArticles.find(s=>s.id===subId);
+    const subIsBottle=sub.regType==='O2'||sub.regType==='ARI';
+    if(status==='ok' && subIsBottle && sub.pressureBar===''){
+      alert('Renseigne la pression réelle mesurée avant de valider cette bouteille comme conforme.');
+      return;
+    }
+    sub.status=status; sub.lastCheck=todayStr(); sub.checkedBy=currentCheckerLabel();
     if((status==='manquant'||status==='perime')&&!sub.qtyMissing) sub.qtyMissing=sub.qty;
     if(status!=='manquant'&&status!=='perime') sub.qtyMissing=0;
     render(); maybeOfferClosure(v); saveState();
