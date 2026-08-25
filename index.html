@@ -154,6 +154,10 @@ body.admin-unlocked .admin-only-topbar{display:inline-flex;}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;}
 .card{background:#fff;border:1px solid var(--line);border-left:5px solid var(--grey);padding:14px;position:relative;cursor:grab;}
 .card.dragging{opacity:.4;}
+.card.card-tech-day{border:3px solid #f0c419;box-shadow:0 0 0 1px #f0c419 inset;}
+.card.card-unavailable{background:#1c1c1c;border-color:#000;}
+.card.card-unavailable h3,.card.card-unavailable .code,.card.card-unavailable .meta,.card.card-unavailable .article-sub{color:#d8d8d8 !important;}
+.card.card-unavailable .tag{background:#3a3a3a;}
 .card.drag-over{outline:2px dashed var(--navy);outline-offset:-2px;}
 .article-row.dragging,.sub-row.dragging{opacity:.4;}
 .article-row.drag-over,.sub-row.drag-over{outline:2px dashed var(--navy);outline-offset:-2px;}
@@ -294,8 +298,8 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
 .tech-textarea{width:100%;padding:9px;border:1px solid var(--line);border-radius:3px;font-size:13px;font-family:var(--font-body);min-height:70px;resize:vertical;}
 
 /* Modal */
-.overlay{position:fixed;inset:0;background:rgba(15,34,55,.55);display:flex;align-items:center;justify-content:center;z-index:50;padding:18px;}
-.modal{background:#fff;width:100%;max-width:440px;padding:22px;border-radius:4px;max-height:85vh;overflow-y:auto;}
+.overlay{position:fixed;inset:0;background:rgba(15,34,55,.55);display:flex;align-items:flex-start;justify-content:center;z-index:65;padding:18px;overflow-y:auto;}
+.modal{background:#fff;width:100%;max-width:440px;padding:22px;border-radius:4px;max-height:85vh;overflow-y:auto;margin-top:56px;margin-bottom:24px;}
 .modal.wide{max-width:600px;}
 .modal h3{font-family:var(--font-head);font-size:17px;color:var(--navy);margin:0 0 14px;}
 .field{margin-bottom:12px;}
@@ -329,11 +333,14 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
 <div class="topbar">
   <div class="brand">
     <div class="mark">CIS</div>
-    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.25.0</div></div>
+    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.27.0</div></div>
   </div>
   <div class="actions">
     <div id="syncStatus" class="sync-status ok">💾 Enregistré</div>
     <button class="checker-pill" id="toolsBtn" style="background:var(--navy-3);" title="Déverrouiller les outils d'administration">🛠</button>
+    <button class="checker-pill" id="securityBtnTop" style="background:var(--navy-3);" title="Sécurité">🔓</button>
+    <button class="checker-pill" id="exportBackupBtnTop" style="background:var(--navy-3);" title="Sauvegarder tout">💾</button>
+    <button class="checker-pill" id="dailyBackupsBtnTop" style="background:var(--navy-3);" title="Sauvegardes automatiques">🗓</button>
     <div class="actions-dropdown"><button type="button" class="dropdown-toggle">⋯ Plus</button><div class="dropdown-panel">
       <div class="checker-pill" id="myCentrePill" style="background:var(--navy-3);">🏠 Mon centre : —</div>
       <button class="checker-pill" id="bigButtonsToggle" style="background:var(--navy-3);">🧤 Gros boutons</button>
@@ -578,6 +585,7 @@ function ensureReservesShape(){
   if(!Array.isArray(state.hospitalTracking)) state.hospitalTracking=[];
   if(!Array.isArray(state.garages)) state.garages=['Atelier départemental'];
   if(!Array.isArray(state.roadClosures)) state.roadClosures=[];
+  if(!Array.isArray(state.consignes)) state.consignes=[];
 }
 
 /* ---------- Protection admin (verrou sur la configuration) ---------- */
@@ -639,6 +647,7 @@ function openAdminSettingsModal(){
     const newPw=document.getElementById('newPw').value;
     state.adminPasswordHash = newPw ? await sha256Hex(newPw) : '';
     await saveState(); overlay.remove();
+    updateSecurityIcon();
     alert(newPw?'Mot de passe enregistré.':'Protection retirée — la configuration est de nouveau libre.');
   });
 }
@@ -682,6 +691,7 @@ async function loadState(){
     }
     if(res&&res.value){
       state=JSON.parse(res.value);
+      lastSyncedState=JSON.parse(JSON.stringify(state)); // référence de départ pour détecter les futures modifications locales
     } else {
       // Réponse reçue mais vraiment vide (premier lancement) : on initialise avec l'exemple et on sauvegarde.
       state=defaultData(); await saveState();
@@ -726,6 +736,7 @@ async function loadState(){
     myCentre=mc&&mc.value?mc.value:'';
   }catch(e){myCentre='';}
   updateMyCentrePill();
+  updateSecurityIcon();
   if(!loadFailed) maybeCreateDailyBackup(); // filet de sécurité, en tâche de fond, sans bloquer l'affichage
   const params=new URLSearchParams(window.location.search);
   const vId=params.get('v'),mode=params.get('mode');
@@ -813,36 +824,60 @@ function updateSyncIndicator(){
   else if(syncStatus==='error'){ el.textContent='⚠ Non synchronisé — nouvelle tentative…'; el.className='sync-status error'; }
   else { el.textContent='💾 Enregistré'; el.className='sync-status ok'; }
 }
+let lastSyncedState=null; // dernière version connue comme synchronisée (chargée ou sauvegardée) — sert de référence pour détecter ce qui a vraiment changé localement
+function mergeArraysByIdDiff(localArr,baselineArr,remoteArr){
+  // Pour chaque élément déjà présent côté serveur : si son contenu local est identique à la dernière
+  // version connue (le "baseline"), il n'a pas été touché ici — on garde la version DISTANTE (plus
+  // fraîche, potentiellement modifiée par un autre agent). S'il diffère du baseline, il a été modifié
+  // ici — on garde la version LOCALE. Ça évite qu'une sauvegarde depuis un écran quelconque n'écrase
+  // le travail d'un autre agent sur un élément qu'on n'a jamais touché.
+  if(!Array.isArray(remoteArr)) remoteArr=[];
+  if(!Array.isArray(localArr)) localArr=[];
+  if(!Array.isArray(baselineArr)) baselineArr=[];
+  const baselineById={}; baselineArr.forEach(x=>{ if(x&&x.id) baselineById[x.id]=x; });
+  const localById={}; localArr.forEach(x=>{ if(x&&x.id) localById[x.id]=x; });
+  const result=remoteArr.map(r=>{
+    if(!r||!r.id) return r;
+    const loc=localById[r.id];
+    if(loc===undefined) return r; // supprimé localement : par prudence on ne supprime pas une suppression qu'on ne peut pas confirmer volontaire ici
+    const base=baselineById[r.id];
+    if(JSON.stringify(base||null)===JSON.stringify(loc)) return r; // pas modifié ici → garder le distant
+    return loc; // modifié ici → garder notre version
+  });
+  const remoteIds=new Set(remoteArr.filter(r=>r&&r.id).map(r=>r.id));
+  localArr.forEach(l=>{ if(l&&l.id&&!remoteIds.has(l.id)) result.push(l); }); // créations locales absentes du distant
+  return result;
+}
 async function saveState(){
   syncStatus='saving'; updateSyncIndicator();
-  // Fusion pour limiter les pertes de données quand plusieurs agents vérifient des véhicules
-  // différents en même temps : juste avant d'écrire, on relit la version la plus fraîche du serveur
-  // et on ne remplace QUE le véhicule en cours d'édition sur CET appareil — tous les autres véhicules
-  // viennent de la dernière version connue du serveur, pas d'une copie locale potentiellement périmée.
-  if(currentView && ['check','config','tech'].includes(currentView.type) && currentView.vehicleId){
-    try{
-      const fresh=await window.storage.get(STORAGE_KEY,true);
-      if(fresh && fresh.value){
-        const remoteState=JSON.parse(fresh.value);
-        if(remoteState && Array.isArray(remoteState.vehicles)){
-          const editingId=currentView.vehicleId;
-          const localVehicle=(state.vehicles||[]).find(v=>v.id===editingId);
-          if(localVehicle){
-            const idx=remoteState.vehicles.findIndex(v=>v.id===editingId);
-            if(idx>=0) remoteState.vehicles[idx]=localVehicle; else remoteState.vehicles.push(localVehicle);
-          }
-          // Les réserves/réparations/suivi hôpital restent la version de cet appareil : ce sont des
-          // actions souvent liées à la vérification en cours (ex: piocher en réserve depuis ce véhicule).
-          remoteState.reserves=state.reserves;
-          remoteState.repairs=state.repairs;
-          remoteState.hospitalTracking=state.hospitalTracking;
-          state=remoteState;
+  try{
+    const fresh=await window.storage.get(STORAGE_KEY,true);
+    if(fresh && fresh.value){
+      const remoteState=JSON.parse(fresh.value);
+      const baseline=lastSyncedState||remoteState;
+      if(remoteState){
+        remoteState.vehicles=mergeArraysByIdDiff(state.vehicles,baseline.vehicles,remoteState.vehicles);
+        if(remoteState.reserves && state.reserves){
+          Object.keys(RESERVE_CATS).forEach(cat=>{
+            remoteState.reserves[cat]=mergeArraysByIdDiff((state.reserves||{})[cat],(baseline.reserves||{})[cat],remoteState.reserves[cat]);
+          });
         }
+        remoteState.repairs=mergeArraysByIdDiff(state.repairs,baseline.repairs,remoteState.repairs);
+        remoteState.hospitalTracking=mergeArraysByIdDiff(state.hospitalTracking,baseline.hospitalTracking,remoteState.hospitalTracking);
+        remoteState.roadClosures=mergeArraysByIdDiff(state.roadClosures,baseline.roadClosures,remoteState.roadClosures);
+        remoteState.consignes=mergeArraysByIdDiff(state.consignes,baseline.consignes,remoteState.consignes);
+        // Champs simples (listes de textes, mot de passe...) : on ne prend la version locale que si
+        // elle diffère du baseline (modifiée ici) — sinon on garde la version distante la plus fraîche.
+        ['adminPasswordHash','garages','hospitals','hospitalServices','repairers','repairDestinations','centres'].forEach(k=>{
+          if(JSON.stringify(state[k])!==JSON.stringify(baseline[k])) remoteState[k]=state[k];
+        });
+        state=remoteState;
       }
-    }catch(e){ console.error('Fusion avant sauvegarde impossible, on sauvegarde quand même la copie locale :',e); }
-  }
+    }
+  }catch(e){ console.error('Fusion avant sauvegarde impossible, on sauvegarde quand même la copie locale :',e); }
   try{
     await window.storage.set(STORAGE_KEY,JSON.stringify(state),true);
+    lastSyncedState=JSON.parse(JSON.stringify(state));
     syncStatus='ok'; updateSyncIndicator();
     if(syncRetryTimer){ clearTimeout(syncRetryTimer); syncRetryTimer=null; }
   }catch(e){
@@ -941,6 +976,13 @@ document.getElementById('toolsBtn').addEventListener('click',()=>requireAdmin(()
   document.body.classList.add('admin-unlocked');
   render();
 }));
+document.getElementById('securityBtnTop').addEventListener('click',openAdminSettingsModal);
+document.getElementById('exportBackupBtnTop').addEventListener('click',exportFullBackup);
+document.getElementById('dailyBackupsBtnTop').addEventListener('click',openDailyBackupsModal);
+function updateSecurityIcon(){
+  const el=document.getElementById('securityBtnTop'); if(!el)return;
+  el.textContent=state.adminPasswordHash?'🔒':'🔓';
+}
 // Gestion générique des menus "⋯ Plus" (mobile) : un seul écouteur global, fonctionne quel que soit
 // le nombre de re-rendus de la page, pas besoin de le rebrancher à chaque fois.
 document.addEventListener('click',e=>{
@@ -1037,7 +1079,7 @@ function render(){
   else if(currentView.type==='hospitalTracking')renderHospitalTracking();
   else if(currentView.type==='help')renderHelp(currentView.tab);
 }
-const APP_VERSION='1.25.0'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.27.0'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -1134,6 +1176,18 @@ function techCheckAnomalies(v){
 }
 function techOverallOk(v){
   return v.techCheck && v.techCheck.lastCheck && techCheckAnomalies(v).length===0;
+}
+function isTechCheckDayToday(v){
+  if(v.hasEngine===false) return false;
+  const freq=v.techCheckFrequency||'hebdomadaire';
+  const today=todayStr();
+  if(freq==='hebdomadaire') return weekdayIndex(today)===(v.techCheckWeekday!==undefined?v.techCheckWeekday:0);
+  if(freq==='mensuel'){
+    const occ=v.techCheckMonthlyOccurrence!==undefined?v.techCheckMonthlyOccurrence:'first';
+    const wd=v.techCheckMonthlyWeekday!==undefined?v.techCheckMonthlyWeekday:0;
+    return monthlyOccurrenceDate(today,occ,wd)===today;
+  }
+  return false;
 }
 function techDueInfo(v){
   if(v.hasEngine===false) return {due:false,label:'Non motorisé — pas de vérification engin',lastDate:null};
@@ -1264,6 +1318,39 @@ function bindVehicleDragDrop(){
   });
 }
 /* ---------- Arrêté de circulation / route barrée ---------- */
+function openQuickCtDatesModal(v){
+  const t=v.techCheck;
+  const overlay=document.createElement('div'); overlay.className='overlay';
+  overlay.innerHTML=`<div class="modal"><h3>📅 Dates contrôle technique / vidange</h3>
+    <p style="font-size:12px;color:var(--muted);">Mise à jour rapide, indépendante du reste de la vérification engin.</p>
+    <div class="field"><label>Prochain contrôle technique</label><input type="date" id="qCt" value="${t.ctDate||''}"></div>
+    <div class="field"><label>Prochaine vidange / entretien</label><input type="date" id="qVid" value="${t.vidangeDate||''}"></div>
+    <div class="modal-actions"><button class="btn ghost" id="qCancel">Annuler</button><button class="btn primary" id="qConfirm">Enregistrer</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  document.getElementById('qCancel').addEventListener('click',()=>overlay.remove());
+  document.getElementById('qConfirm').addEventListener('click',async()=>{
+    t.ctDate=document.getElementById('qCt').value;
+    t.vidangeDate=document.getElementById('qVid').value;
+    await saveState(); overlay.remove(); render();
+  });
+}
+function openConsigneModal(){
+  const overlay=document.createElement('div'); overlay.className='overlay';
+  overlay.innerHTML=`<div class="modal"><h3>📋 Ajouter une consigne</h3>
+    <div class="field"><label>Consigne</label><textarea id="consText" rows="3" placeholder="Ex: VSAV 05 à vérifier en priorité ce matin, exercice prévu à 14h..."></textarea></div>
+    <div class="modal-actions"><button class="btn ghost" id="consCancel">Annuler</button><button class="btn primary" id="consConfirm">Ajouter</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  document.getElementById('consCancel').addEventListener('click',()=>overlay.remove());
+  document.getElementById('consConfirm').addEventListener('click',async()=>{
+    const text=document.getElementById('consText').value.trim();
+    if(!text) return;
+    state.consignes=state.consignes||[];
+    state.consignes.push({id:uid('cn'),text,done:false,createdBy:currentCheckerLabel(),createdDate:todayStr()});
+    await saveState(); overlay.remove(); render();
+  });
+}
 function openRoadClosureModal(){
   const overlay=document.createElement('div'); overlay.className='overlay';
   overlay.innerHTML=`<div class="modal"><h3>🚧 Signaler une route barrée</h3>
@@ -1301,11 +1388,8 @@ function renderDashboard(){
         <button class="btn ghost" id="dailyRecapBtn">📋 Récap du jour</button>
         <button class="btn ghost" id="repairsBtn">🔧 Suivi réparations${state.repairs.filter(r=>!r.returned).length?' ('+state.repairs.filter(r=>!r.returned).length+')':''}</button>
         <button class="btn ghost" id="hospitalTrackingBtn">🏥 Suivi matériel en CH${state.hospitalTracking.filter(h=>!h.returned).length?' ('+state.hospitalTracking.filter(h=>!h.returned).length+')':''}</button>
-        <button class="btn ghost" id="securityBtn" title="Sécurité">${state.adminPasswordHash?'🔒':'🔓'}</button>
         ${adminAccessible()?'<button class="btn ghost small" id="dupBtn">🔍 Détecter les doublons</button>':''}
-        <button class="btn ghost small" id="exportBackupBtn">💾 Sauvegarder tout</button>
         ${adminAccessible()?'<button class="btn ghost small" id="restoreBackupBtn">📤 Restaurer une sauvegarde</button>':''}
-        <button class="btn ghost small" id="dailyBackupsBtn">🗓 Sauvegardes automatiques</button>
       </div></div>
     </div></div>
     <div class="summary-strip">
@@ -1314,6 +1398,22 @@ function renderDashboard(){
       <div class="summary-cell warn"><div class="n">${warn}</div><div class="l">À vérifier</div></div>
       <div class="summary-cell bad"><div class="n">${bad}</div><div class="l">Anomalies</div></div>
     </div>`;
+  const consignes=(state.consignes||[]).filter(c=>!c.done);
+  html+=`<details class="emp-block" style="margin-top:16px;${consignes.length?'border-left:4px solid var(--navy);':'border-left:4px solid var(--steel);'}">
+    <summary style="cursor:pointer;padding:12px 14px;background:${consignes.length?'#eef2f6':'var(--paper)'};display:flex;justify-content:space-between;align-items:center;font-family:var(--font-head);font-size:15px;color:var(--navy);">
+      <span>📋 Consignes du jour</span>
+      <span>${consignes.length?`<span class="tag" style="background:var(--navy);color:#fff;">${consignes.length}</span>`:''}</span>
+    </summary>
+    <div class="emp-body">
+      <button class="btn small primary" id="addConsigneBtn" style="margin-bottom:10px;">➕ Ajouter une consigne</button>`;
+  if(!consignes.length){ html+='<p style="font-size:12.5px;color:var(--muted);">Aucune consigne active.</p>'; }
+  consignes.forEach(c=>{
+    html+=`<div class="article-row" style="grid-template-columns:1fr 100px;">
+      <div style="font-size:12.5px;">${escapeHtml(c.text)}<br><span class="article-sub">Ajoutée le ${fmtDate(c.createdDate)}${c.createdBy?' par '+escapeHtml(c.createdBy):''}</span></div>
+      <button class="btn small ghost" data-done-consigne="${c.id}">✓ Terminé</button>
+    </div>`;
+  });
+  html+=`</div></details>`;
   const roadClosures=state.roadClosures||[];
   const rcActive=roadClosures.filter(rc=>!rc.reopened);
   const rcOngoing=rcActive.filter(rc=>rc.dateDebut<=todayStr());
@@ -1403,7 +1503,7 @@ function renderDashboard(){
       const due=checkDueInfo(v);
       const o2Total=vehicleGasTotals(v);
       html+=`
-      <div class="card st-${s.overall}" draggable="true" data-vehicle-drag="${v.id}" style="${v.outOfService?'border:2px solid var(--red-dark);':''}">
+      <div class="card st-${s.overall} ${(v.outOfService||(v.currentCis&&v.currentCis!==v.cis))?'card-unavailable':''} ${isTechCheckDayToday(v)?'card-tech-day':''}" draggable="true" data-vehicle-drag="${v.id}">
         ${v.outOfService?`<div style="background:var(--red-dark);color:#fff;margin:-14px -14px 10px;padding:8px 14px;font-family:var(--font-head);font-size:13px;">🚨 INDISPONIBLE — ${escapeHtml(v.outOfServiceInfo.dest)}${v.outOfServiceInfo.motif?' — '+escapeHtml(v.outOfServiceInfo.motif):''}${v.outOfServiceInfo.dateRetourPrevue?' · retour prévu '+fmtDate(v.outOfServiceInfo.dateRetourPrevue):''}</div>`:''}
         <div class="row1"><span class="tag">${v.emplacements.length} emplacement(s)</span>${v.amsec?'<span class="tag amsec">AMSEC</span>':''}</div>
         <h3 data-open="${v.id}">${escapeHtml(v.name)}</h3>
@@ -1489,17 +1589,19 @@ function renderDashboard(){
   document.getElementById('hospitalTrackingBtn').addEventListener('click',openHospitalTrackingView);
   document.getElementById('globalSearchBtn').addEventListener('click',openGlobalSearchModal);
   const addRcBtn=document.getElementById('addRoadClosureBtn'); if(addRcBtn) addRcBtn.addEventListener('click',openRoadClosureModal);
+  const addConsBtn=document.getElementById('addConsigneBtn'); if(addConsBtn) addConsBtn.addEventListener('click',openConsigneModal);
+  app.querySelectorAll('[data-done-consigne]').forEach(el=>el.addEventListener('click',async()=>{
+    const c=(state.consignes||[]).find(x=>x.id===el.dataset.doneConsigne); if(!c)return;
+    c.done=true; await saveState(); render();
+  }));
   app.querySelectorAll('[data-reopen-road]').forEach(el=>el.addEventListener('click',async()=>{
     const rc=(state.roadClosures||[]).find(x=>x.id===el.dataset.reopenRoad); if(!rc)return;
     rc.reopened=true; rc.dateFinReelle=todayStr();
     await saveState(); render();
   }));
   bindVehicleDragDrop();
-  document.getElementById('securityBtn').addEventListener('click',openAdminSettingsModal);
   const dupB=document.getElementById('dupBtn'); if(dupB) dupB.addEventListener('click',()=>requireAdmin(openDuplicatesModal));
-  document.getElementById('exportBackupBtn').addEventListener('click',exportFullBackup);
   const restB=document.getElementById('restoreBackupBtn'); if(restB) restB.addEventListener('click',()=>requireAdmin(openRestoreBackupModal));
-  document.getElementById('dailyBackupsBtn').addEventListener('click',openDailyBackupsModal);
   const impSeedB=document.getElementById('importSeedBtn'); if(impSeedB) impSeedB.addEventListener('click',()=>requireAdmin(importSeedCatalogue));
 }
 
@@ -3749,7 +3851,10 @@ function renderCheck(vehicleId){
   app.innerHTML=html;
   document.getElementById('backLink').addEventListener('click',()=>{currentView={type:'dashboard'};checkOpenEmps=null;render();});
   const toConfigBtn=document.getElementById('toConfigTab'); if(toConfigBtn) toConfigBtn.addEventListener('click',()=>requireAdmin(()=>{currentView={type:'config',vehicleId:v.id};render();}));
-  const toTechBtn=document.getElementById('toTechTab'); if(toTechBtn) toTechBtn.addEventListener('click',()=>{currentView={type:'tech',vehicleId:v.id};render();});
+  const toTechBtn=document.getElementById('toTechTab'); if(toTechBtn) toTechBtn.addEventListener('click',()=>{
+    requireChecker({vehicleId:v.id,type:'tech'},()=>{});
+    currentView={type:'tech',vehicleId:v.id}; render();
+  });
   const voiceBtn=document.getElementById('voiceModeBtn'); if(voiceBtn) voiceBtn.addEventListener('click',()=>startVoiceInventory(v));
   const voiceSetBtn=document.getElementById('voiceSettingsBtn'); if(voiceSetBtn) voiceSetBtn.addEventListener('click',openVoicePickerModal);
   document.getElementById('orderBtn').addEventListener('click',()=>openOrderModal(v));
@@ -3973,7 +4078,7 @@ function renderTech(vehicleId){
   let html=`<div class="back-link" id="backLink">← Retour au tableau de bord</div>
   <div class="detail-header">
     <div class="detail-title"><h2>${escapeHtml(v.name)}</h2><div class="code">Vérification de l'engin${t.lastCheck?' · dernière le '+fmtDate(t.lastCheck)+(t.verifiedBy?' — '+escapeHtml(t.verifiedBy):''):''}</div></div>
-    <div class="detail-actions"><button class="btn ghost small" id="toCheckTab2">Vérification matériel</button>${adminAccessible()?'<button class="btn ghost small" id="toConfigTab2">Configurer</button>':''}</div>
+    <div class="detail-actions"><button class="btn ghost small" id="toCheckTab2">Vérification matériel</button><button class="btn ghost small" id="quickCtDatesBtn">📅 Dates CT/Vidange</button>${adminAccessible()?'<button class="btn ghost small" id="toConfigTab2">Configurer</button>':''}</div>
   </div>
   <div class="mode-tabs"><div class="mode-tab" id="toCheckTab3">Vérification matériel</div><div class="mode-tab active">Vérification engin</div></div>
 
@@ -4043,6 +4148,7 @@ function renderTech(vehicleId){
   app.innerHTML=html;
   document.getElementById('backLink').addEventListener('click',()=>{currentView={type:'dashboard'};render();});
   document.getElementById('toCheckTab2').addEventListener('click',()=>{currentView={type:'check',vehicleId:v.id};render();});
+  document.getElementById('quickCtDatesBtn').addEventListener('click',()=>openQuickCtDatesModal(v));
   document.getElementById('toCheckTab3').addEventListener('click',()=>{currentView={type:'check',vehicleId:v.id};render();});
   const toConfigBtn2=document.getElementById('toConfigTab2'); if(toConfigBtn2) toConfigBtn2.addEventListener('click',()=>requireAdmin(()=>{currentView={type:'config',vehicleId:v.id};render();}));
   document.getElementById('tCarb').addEventListener('input',e=>{
