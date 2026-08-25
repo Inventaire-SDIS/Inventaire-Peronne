@@ -68,6 +68,19 @@ const FIREBASE_CONFIG_PLACEHOLDER = {
         const snap = await db.collection(SHARED_COLLECTION).get();
         const keys = snap.docs.map(d=>d.id).filter(k=>!prefix || k.indexOf(prefix)===0);
         return {keys, prefix, shared:true};
+      },
+      async transact(key, updaterFn){
+        // Lecture + écriture strictement atomiques côté serveur : si un autre appareil écrit entre
+        // les deux, Firestore relance automatiquement updaterFn avec la toute dernière version —
+        // aucune écriture concurrente ne peut donc jamais en écraser silencieusement une autre.
+        const ref = db.collection(SHARED_COLLECTION).doc(key);
+        return db.runTransaction(async tx=>{
+          const doc = await tx.get(ref);
+          const currentValue = doc.exists ? doc.data().value : null;
+          const newValue = await updaterFn(currentValue);
+          tx.set(ref, {value: newValue, updatedAt: Date.now()});
+          return newValue;
+        });
       }
     };
     console.log("[Firebase] Connecte : les donnees partagees sont maintenant synchronisees via Firestore, projet "+FIREBASE_CONFIG_PLACEHOLDER.projectId+".");
@@ -108,6 +121,7 @@ body.admin-unlocked .admin-only-topbar{display:inline-flex;}
 .sync-status.ok{background:rgba(255,255,255,.12);}
 .sync-status.saving{background:rgba(255,255,255,.12);opacity:.7;}
 .sync-status.error{background:var(--red);animation:pillPulse 1.6s infinite;}
+.sync-status.pending{background:var(--amber-dark);}
 .fab-close{position:fixed;bottom:20px;right:20px;z-index:55;background:var(--green);color:#fff;border:none;border-radius:30px;padding:14px 22px;font-size:14px;font-weight:700;box-shadow:0 4px 14px rgba(0,0,0,.3);cursor:pointer;}
 .fab-close:hover{background:var(--green-dark);}
 /* Menu deroulant reutilisable : boutons affiches en ligne sur desktop, repliés sous "..." sur mobile — sans JS supplémentaire. */
@@ -335,7 +349,7 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
 <div class="topbar">
   <div class="brand">
     <div class="mark">CIS</div>
-    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.28.0</div></div>
+    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.29.0</div></div>
   </div>
   <div class="actions">
     <div id="syncStatus" class="sync-status ok">💾 Enregistré</div>
@@ -831,7 +845,8 @@ let syncStatus='ok'; // 'ok' | 'saving' | 'error'
 let syncRetryTimer=null;
 function updateSyncIndicator(){
   const el=document.getElementById('syncStatus'); if(!el)return;
-  if(syncStatus==='saving'){ el.textContent='💾 Enregistrement…'; el.className='sync-status saving'; }
+  if(syncStatus==='pending'){ el.textContent='⏳ Modifs en attente…'; el.className='sync-status pending'; }
+  else if(syncStatus==='saving'){ el.textContent='💾 Enregistrement…'; el.className='sync-status saving'; }
   else if(syncStatus==='error'){ el.textContent='⚠ Non synchronisé — nouvelle tentative…'; el.className='sync-status error'; }
   else { el.textContent='💾 Enregistré'; el.className='sync-status ok'; }
 }
@@ -859,35 +874,51 @@ function mergeArraysByIdDiff(localArr,baselineArr,remoteArr){
   localArr.forEach(l=>{ if(l&&l.id&&!remoteIds.has(l.id)) result.push(l); }); // créations locales absentes du distant
   return result;
 }
-async function saveState(){
+function mergeStateForSave(remoteState){
+  // Fusionne l'état local dans la dernière version distante connue : on ne garde du local que ce qui
+  // a vraiment changé depuis la dernière synchro (comparé au baseline), le reste vient du distant.
+  const baseline=lastSyncedState||remoteState;
+  remoteState.vehicles=mergeArraysByIdDiff(state.vehicles,baseline.vehicles,remoteState.vehicles);
+  if(remoteState.reserves && state.reserves){
+    Object.keys(RESERVE_CATS).forEach(cat=>{
+      remoteState.reserves[cat]=mergeArraysByIdDiff((state.reserves||{})[cat],(baseline.reserves||{})[cat],remoteState.reserves[cat]);
+    });
+  }
+  remoteState.repairs=mergeArraysByIdDiff(state.repairs,baseline.repairs,remoteState.repairs);
+  remoteState.hospitalTracking=mergeArraysByIdDiff(state.hospitalTracking,baseline.hospitalTracking,remoteState.hospitalTracking);
+  remoteState.roadClosures=mergeArraysByIdDiff(state.roadClosures,baseline.roadClosures,remoteState.roadClosures);
+  remoteState.consignes=mergeArraysByIdDiff(state.consignes,baseline.consignes,remoteState.consignes);
+  ['adminPasswordHash','garages','hospitals','hospitalServices','repairers','repairDestinations','centres'].forEach(k=>{
+    if(JSON.stringify(state[k])!==JSON.stringify(baseline[k])) remoteState[k]=state[k];
+  });
+  return remoteState;
+}
+async function doActualSave(){
   syncStatus='saving'; updateSyncIndicator();
   try{
-    const fresh=await window.storage.get(STORAGE_KEY,true);
-    if(fresh && fresh.value){
-      const remoteState=JSON.parse(fresh.value);
-      const baseline=lastSyncedState||remoteState;
-      if(remoteState){
-        remoteState.vehicles=mergeArraysByIdDiff(state.vehicles,baseline.vehicles,remoteState.vehicles);
-        if(remoteState.reserves && state.reserves){
-          Object.keys(RESERVE_CATS).forEach(cat=>{
-            remoteState.reserves[cat]=mergeArraysByIdDiff((state.reserves||{})[cat],(baseline.reserves||{})[cat],remoteState.reserves[cat]);
-          });
+    if(window.storage.transact){
+      // Transaction atomique côté serveur : lecture + fusion + écriture en une seule opération que
+      // Firestore relance automatiquement si un autre appareil a écrit entre-temps — élimine
+      // complètement le risque qu'une sauvegarde en écrase une autre, même en cas d'écritures
+      // simultanées venant de plusieurs agents à la même seconde.
+      const finalValue=await window.storage.transact(STORAGE_KEY, async(currentValue)=>{
+        const remoteState = currentValue ? JSON.parse(currentValue) : null;
+        const merged = remoteState ? mergeStateForSave(remoteState) : state;
+        return JSON.stringify(merged);
+      });
+      state=JSON.parse(finalValue);
+    } else {
+      // Stockage sans transaction disponible (ex: mode sans Firebase) : on retombe sur la fusion
+      // manuelle lecture-puis-écriture, moins robuste en cas de forte concurrence mais fonctionnelle.
+      try{
+        const fresh=await window.storage.get(STORAGE_KEY,true);
+        if(fresh && fresh.value){
+          const remoteState=JSON.parse(fresh.value);
+          if(remoteState) state=mergeStateForSave(remoteState);
         }
-        remoteState.repairs=mergeArraysByIdDiff(state.repairs,baseline.repairs,remoteState.repairs);
-        remoteState.hospitalTracking=mergeArraysByIdDiff(state.hospitalTracking,baseline.hospitalTracking,remoteState.hospitalTracking);
-        remoteState.roadClosures=mergeArraysByIdDiff(state.roadClosures,baseline.roadClosures,remoteState.roadClosures);
-        remoteState.consignes=mergeArraysByIdDiff(state.consignes,baseline.consignes,remoteState.consignes);
-        // Champs simples (listes de textes, mot de passe...) : on ne prend la version locale que si
-        // elle diffère du baseline (modifiée ici) — sinon on garde la version distante la plus fraîche.
-        ['adminPasswordHash','garages','hospitals','hospitalServices','repairers','repairDestinations','centres'].forEach(k=>{
-          if(JSON.stringify(state[k])!==JSON.stringify(baseline[k])) remoteState[k]=state[k];
-        });
-        state=remoteState;
-      }
+      }catch(e){ console.error('Fusion avant sauvegarde impossible, on sauvegarde quand même la copie locale :',e); }
+      await window.storage.set(STORAGE_KEY,JSON.stringify(state),true);
     }
-  }catch(e){ console.error('Fusion avant sauvegarde impossible, on sauvegarde quand même la copie locale :',e); }
-  try{
-    await window.storage.set(STORAGE_KEY,JSON.stringify(state),true);
     lastSyncedState=JSON.parse(JSON.stringify(state));
     syncStatus='ok'; updateSyncIndicator();
     if(syncRetryTimer){ clearTimeout(syncRetryTimer); syncRetryTimer=null; }
@@ -896,10 +927,36 @@ async function saveState(){
     syncStatus='error'; updateSyncIndicator();
     // Nouvelle tentative automatique tant que l'erreur persiste — la dernière version de "state" en
     // mémoire est toujours renvoyée, donc rien n'est perdu tant que l'onglet reste ouvert.
-    if(!syncRetryTimer){ syncRetryTimer=setTimeout(()=>{ syncRetryTimer=null; saveState(); },5000); }
+    if(!syncRetryTimer){ syncRetryTimer=setTimeout(()=>{ syncRetryTimer=null; flushSave(); },5000); }
   }
 }
-window.addEventListener('online',()=>{ if(syncStatus==='error') saveState(); });
+// Sauvegarde différée : on regroupe les modifications rapprochées en une seule écriture réseau,
+// plutôt que de solliciter le serveur à chaque clic — plus fluide, moins de trafic, et moins
+// d'occasions de collision entre plusieurs agents. Jamais plus de SAVE_MAX_WAIT_MS sans synchroniser,
+// et synchronisation immédiate forcée aux moments clés (clôture, changement d'écran, fermeture).
+const SAVE_DEBOUNCE_MS=6000;
+const SAVE_MAX_WAIT_MS=45000;
+let pendingSaveTimer=null;
+let pendingSaveMaxTimer=null;
+let pendingSavePromise=null;
+function scheduleSave(){
+  syncStatus='pending'; updateSyncIndicator();
+  if(pendingSaveTimer) clearTimeout(pendingSaveTimer);
+  pendingSaveTimer=setTimeout(flushSave,SAVE_DEBOUNCE_MS);
+  if(!pendingSaveMaxTimer) pendingSaveMaxTimer=setTimeout(flushSave,SAVE_MAX_WAIT_MS);
+}
+async function flushSave(){
+  if(pendingSaveTimer){clearTimeout(pendingSaveTimer);pendingSaveTimer=null;}
+  if(pendingSaveMaxTimer){clearTimeout(pendingSaveMaxTimer);pendingSaveMaxTimer=null;}
+  if(!pendingSavePromise) pendingSavePromise=doActualSave().finally(()=>{pendingSavePromise=null;});
+  return pendingSavePromise;
+}
+async function saveState(){
+  scheduleSave();
+}
+window.addEventListener('online',()=>{ if(syncStatus==='error') flushSave(); });
+window.addEventListener('beforeunload',()=>{ if(pendingSaveTimer||pendingSaveMaxTimer) flushSave(); });
+document.addEventListener('visibilitychange',()=>{ if(document.hidden && (pendingSaveTimer||pendingSaveMaxTimer)) flushSave(); });
 async function saveCheckers(){try{await window.storage.set(CHECKER_KEY,JSON.stringify(checkerNames),false);}catch(e){}}
 function updateCheckerPill(){
   // La pastille d'en-tête a été retirée (elle ne correspondait à aucun véhicule précis, puisque
@@ -1008,6 +1065,9 @@ document.addEventListener('click',e=>{
   if(!e.target.closest('.actions-dropdown')){
     document.querySelectorAll('.actions-dropdown.open').forEach(m=>m.classList.remove('open'));
   }
+  // Retour au tableau de bord : on force la synchronisation immédiate de ce qui était en attente,
+  // plutôt que de laisser ça traîner pendant qu'un autre véhicule est ouvert.
+  if(e.target.closest('#backLink') && (pendingSaveTimer||pendingSaveMaxTimer)){ flushSave(); }
 });
 
 document.getElementById('addVehicleBtn').addEventListener('click',()=>requireAdmin(()=>openVehicleModal()));
@@ -1090,7 +1150,7 @@ function render(){
   else if(currentView.type==='hospitalTracking')renderHospitalTracking();
   else if(currentView.type==='help')renderHelp(currentView.tab);
 }
-const APP_VERSION='1.28.0'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.29.0'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -3730,7 +3790,7 @@ async function closeVehicleCheck(v){
   v.checkHistory=v.checkHistory||[];
   v.checkHistory.push({date:todayStr(),pct:st.pct,overall:st.overall,checkedBy:currentCheckerLabel()});
   if(v.checkHistory.length>50) v.checkHistory=v.checkHistory.slice(-50);
-  await saveState();
+  await flushSave(); // clôture = synchronisation immédiate, pas d'attente
   // Le nom de l'agent est réinitialisé une fois la vérification clôturée, pour que le prochain contrôle
   // (souvent fait par quelqu'un d'autre) ne reste pas attribué par erreur à la personne précédente.
   checkerNames=[]; activeCheckContext=null; await saveCheckers(); updateCheckerPill();
@@ -3746,7 +3806,7 @@ async function restartFullCheck(v){
       (a.sousArticles||[]).forEach(s=>{ s.status='verifier'; s.lastCheck=''; s.checkedBy=''; s.qtyMissing=0; });
     });
   });
-  await saveState(); render();
+  await flushSave(); render();
   alert('Inventaire réinitialisé — à refaire entièrement.');
 }
 async function closeDailyCheck(v){
@@ -3754,7 +3814,7 @@ async function closeDailyCheck(v){
   v.dailyCheckHistory=v.dailyCheckHistory||[];
   v.dailyCheckHistory.push({date:todayStr(),pct:st.pct,checkedBy:currentCheckerLabel()});
   if(v.dailyCheckHistory.length>50) v.dailyCheckHistory=v.dailyCheckHistory.slice(-50);
-  await saveState();
+  await flushSave();
   checkerNames=[]; activeCheckContext=null; await saveCheckers(); updateCheckerPill();
   return st;
 }
@@ -4273,7 +4333,7 @@ function renderTech(vehicleId){
       verifiedBy:currentCheckerLabel(),lastCheck:todayStr()
     };
     checkerNames=[]; activeCheckContext=null; await saveCheckers(); updateCheckerPill();
-    await saveState(); render();
+    await flushSave(); render();
     alert('Vérification enregistrée.');
   }));
 }
