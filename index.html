@@ -102,6 +102,8 @@ input,select,textarea{font-family:var(--font-body);}
 .checker-pill{font-size:13.5px;font-weight:700;color:#fff;font-family:var(--font-body);background:var(--steel);padding:9px 14px;border-radius:20px;border:2px solid rgba(255,255,255,.35);cursor:pointer;}
 .checker-pill:hover{background:#5a80a3;}
 .checker-pill.empty{background:var(--red);border-color:#fff;animation:pillPulse 1.6s infinite;}
+.admin-only-topbar{display:none;}
+body.admin-unlocked .admin-only-topbar{display:inline-flex;}
 .sync-status{font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:14px;color:#fff;white-space:nowrap;}
 .sync-status.ok{background:rgba(255,255,255,.12);}
 .sync-status.saving{background:rgba(255,255,255,.12);opacity:.7;}
@@ -156,6 +158,9 @@ input,select,textarea{font-family:var(--font-body);}
 .article-row.dragging,.sub-row.dragging{opacity:.4;}
 .article-row.drag-over,.sub-row.drag-over{outline:2px dashed var(--navy);outline-offset:-2px;}
 .article-row[draggable="true"],.sub-row[draggable="true"]{cursor:grab;}
+.check-article.dragging{opacity:.4;}
+.check-article.drag-over{outline:2px dashed var(--navy);outline-offset:-2px;}
+.check-article[draggable="true"]{cursor:grab;}
 .card.st-ok{border-left-color:var(--green);} .card.st-warn{border-left-color:var(--amber);} .card.st-bad{border-left-color:var(--red);}
 .card .row1{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;}
 .card h3{font-family:var(--font-head);font-size:17px;margin:7px 0 2px;color:var(--navy);cursor:pointer;}
@@ -324,16 +329,17 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
 <div class="topbar">
   <div class="brand">
     <div class="mark">CIS</div>
-    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.23.0</div></div>
+    <div><h1>Inventaire Matériel</h1><div class="sub" id="unitCount">— chargement —</div><div class="sub" id="appVersion" style="opacity:.6;font-size:10px;">v1.25.0</div></div>
   </div>
   <div class="actions">
     <div id="syncStatus" class="sync-status ok">💾 Enregistré</div>
+    <button class="checker-pill" id="toolsBtn" style="background:var(--navy-3);" title="Déverrouiller les outils d'administration">🛠</button>
     <div class="actions-dropdown"><button type="button" class="dropdown-toggle">⋯ Plus</button><div class="dropdown-panel">
       <div class="checker-pill" id="myCentrePill" style="background:var(--navy-3);">🏠 Mon centre : —</div>
       <button class="checker-pill" id="bigButtonsToggle" style="background:var(--navy-3);">🧤 Gros boutons</button>
       <button class="checker-pill" id="helpBtn" style="background:var(--navy-3);">❓ Aide</button>
-      <button class="btn ghost" id="importBtn">Importer</button>
-      <button class="btn primary" id="addVehicleBtn">+ Véhicule</button>
+      <button class="btn ghost admin-only-topbar" id="importBtn">Importer</button>
+      <button class="btn primary admin-only-topbar" id="addVehicleBtn">+ Véhicule</button>
     </div></div>
   </div>
 </div>
@@ -448,14 +454,17 @@ function resetMaterialCheckIfNeeded(v){
 }
 async function maybeRestartOnReopen(v){
   // Si l'inventaire matériel du véhicule est déjà clôturé pour le cycle en cours (ex: déjà fait ce
-  // matin pour un véhicule quotidien), rouvrir "Vérifier" relance quand même une vérification fraîche
-  // — utile pour un contrôle demandé en supplément le soir. Les vraies anomalies restent affichées ;
-  // le pourcentage du tableau de bord, lui, ne bougera qu'à la prochaine clôture (voir displayedVehicleStats).
+  // matin), on DEMANDE avant de relancer une vérification fraîche — pour ne jamais remettre à zéro
+  // un inventaire déjà clôturé sans confirmation explicite de l'agent. Refuser = simple consultation,
+  // rien n'est modifié. Le pourcentage du tableau de bord ne bougera de toute façon qu'à la nouvelle clôture.
   if(readOnlySkip(v)) return;
   const due=checkDueInfo(v);
   if(!due.due && v.checkHistory && v.checkHistory.length){
-    performMaterialSoftReset(v);
-    await saveState();
+    const already=confirm('« '+v.name+' » a déjà été vérifié pour cette période ('+checkDueInfo(v).label+').\n\nVeux-tu recommencer une nouvelle vérification complète ? (les éléments déjà confirmés repasseront "à vérifier" — les anomalies en cours restent affichées)\n\nAnnuler = juste consulter l\'inventaire tel quel, sans rien réinitialiser.');
+    if(already){
+      performMaterialSoftReset(v);
+      await saveState();
+    }
   }
 }
 function readOnlySkip(v){ return isVehicleReadOnlyForMe(v) || v.outOfService; }
@@ -573,6 +582,7 @@ function ensureReservesShape(){
 
 /* ---------- Protection admin (verrou sur la configuration) ---------- */
 let adminUnlocked=false; // reinitialisé a chaque chargement de page, jamais persiste
+function adminAccessible(){ return adminUnlocked || !state.adminPasswordHash; }
 async function sha256Hex(text){
   const enc=new TextEncoder().encode(text);
   const buf=await crypto.subtle.digest('SHA-256',enc);
@@ -619,7 +629,7 @@ function openAdminSettingsModal(){
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
   document.getElementById('secClose').addEventListener('click',()=>overlay.remove());
   const lockBtn=document.getElementById('lockNowBtn');
-  if(lockBtn) lockBtn.addEventListener('click',()=>{ adminUnlocked=false; overlay.remove(); alert('Configuration verrouillée.'); });
+  if(lockBtn) lockBtn.addEventListener('click',()=>{ adminUnlocked=false; document.body.classList.remove('admin-unlocked'); overlay.remove(); render(); alert('Configuration verrouillée.'); });
   document.getElementById('secSave').addEventListener('click',async()=>{
     if(hasPw){
       const cur=document.getElementById('curPw').value;
@@ -716,10 +726,84 @@ async function loadState(){
     myCentre=mc&&mc.value?mc.value:'';
   }catch(e){myCentre='';}
   updateMyCentrePill();
+  if(!loadFailed) maybeCreateDailyBackup(); // filet de sécurité, en tâche de fond, sans bloquer l'affichage
   const params=new URLSearchParams(window.location.search);
   const vId=params.get('v'),mode=params.get('mode');
   if(vId&&state.vehicles.find(v=>v.id===vId)){currentView={type:mode==='config'?'config':'check',vehicleId:vId};}
   render();
+}
+const DAILY_BACKUP_PREFIX='sp-inv-daily-backup-';
+const DAILY_BACKUP_KEEP_DAYS=30;
+async function maybeCreateDailyBackup(){
+  // Filet de sécurité indépendant des données actives : une copie complète par jour, conservée
+  // DAILY_BACKUP_KEEP_DAYS jours, pour pouvoir revenir en arrière en cas de problème (bug, erreur
+  // de manipulation...) sans dépendre uniquement d'une sauvegarde manuelle faite au bon moment.
+  if(!state || !Array.isArray(state.vehicles)) return;
+  const key=DAILY_BACKUP_PREFIX+todayStr();
+  try{
+    const existing=await window.storage.get(key,true);
+    if(existing && existing.value) return; // déjà fait aujourd'hui
+  }catch(e){ return; } // en cas de doute sur l'état existant, on ne force pas une écriture
+  try{
+    await window.storage.set(key,JSON.stringify(state),true);
+    pruneOldDailyBackups();
+  }catch(e){ console.error('Sauvegarde quotidienne automatique échouée :',e); }
+}
+async function pruneOldDailyBackups(){
+  try{
+    const res=await window.storage.list(DAILY_BACKUP_PREFIX,true);
+    if(!res || !res.keys) return;
+    const dates=res.keys.map(k=>k.replace(DAILY_BACKUP_PREFIX,'')).sort();
+    const cutoffIdx=dates.length-DAILY_BACKUP_KEEP_DAYS;
+    if(cutoffIdx<=0) return;
+    const toDelete=dates.slice(0,cutoffIdx);
+    for(const d of toDelete){ try{ await window.storage.delete(DAILY_BACKUP_PREFIX+d,true); }catch(e){} }
+  }catch(e){ console.error('Nettoyage des anciennes sauvegardes échoué :',e); }
+}
+async function openDailyBackupsModal(){
+  const overlay=document.createElement('div'); overlay.className='overlay';
+  overlay.innerHTML=`<div class="modal wide"><h3>🗓 Sauvegardes automatiques quotidiennes</h3>
+    <p style="font-size:12px;color:var(--muted);">Une copie complète est conservée chaque jour (${DAILY_BACKUP_KEEP_DAYS} derniers jours). Utile en cas de problème pour revenir à un état antérieur.</p>
+    <div id="dailyBackupsList" style="max-height:340px;overflow-y:auto;"><p style="font-size:12.5px;color:var(--muted);">Chargement…</p></div>
+    <div class="modal-actions"><button class="btn ghost" id="dbClose">Fermer</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  document.getElementById('dbClose').addEventListener('click',()=>overlay.remove());
+  try{
+    const res=await window.storage.list(DAILY_BACKUP_PREFIX,true);
+    const dates=(res&&res.keys?res.keys.map(k=>k.replace(DAILY_BACKUP_PREFIX,'')):[]).sort().reverse();
+    const listEl=document.getElementById('dailyBackupsList');
+    if(!dates.length){ listEl.innerHTML='<p style="font-size:12.5px;color:var(--muted);">Aucune sauvegarde automatique disponible pour l\'instant.</p>'; return; }
+    listEl.innerHTML=dates.map(d=>`<div class="article-row" style="grid-template-columns:1fr 100px 100px;">
+      <div style="font-size:12.5px;"><b>${fmtDate(d)}</b>${d===todayStr()?' <span class="tag">Aujourd\'hui</span>':''}</div>
+      <button class="btn small ghost" data-download-backup="${d}">⬇ Télécharger</button>
+      <button class="btn small primary" data-restore-backup="${d}">↩ Restaurer</button>
+    </div>`).join('');
+    listEl.querySelectorAll('[data-download-backup]').forEach(btn=>btn.addEventListener('click',async()=>{
+      const d=btn.dataset.downloadBackup;
+      const res2=await window.storage.get(DAILY_BACKUP_PREFIX+d,true);
+      if(res2&&res2.value) downloadFile('sauvegarde_auto_'+d+'.json',res2.value,'application/json');
+    }));
+    listEl.querySelectorAll('[data-restore-backup]').forEach(btn=>btn.addEventListener('click',()=>requireAdmin(async()=>{
+      const d=btn.dataset.restoreBackup;
+      if(!confirm('Restaurer la sauvegarde automatique du '+fmtDate(d)+' ? Ceci remplace TOUTES les données actuelles par celles de ce jour-là.')) return;
+      const res2=await window.storage.get(DAILY_BACKUP_PREFIX+d,true);
+      if(!res2||!res2.value){ alert('Sauvegarde introuvable.'); return; }
+      try{
+        const parsed=JSON.parse(res2.value);
+        if(!parsed.vehicles||!Array.isArray(parsed.vehicles)) throw new Error('format invalide');
+        state=parsed;
+        state.vehicles.forEach(ensureVehicleShape);
+        ensureReservesShape();
+        await saveState();
+        overlay.remove();
+        currentView={type:'dashboard'}; render();
+        alert('Sauvegarde du '+fmtDate(d)+' restaurée.');
+      }catch(e){ alert('Fichier de sauvegarde invalide ou illisible.'); }
+    })));
+  }catch(e){
+    document.getElementById('dailyBackupsList').innerHTML='<p style="font-size:12.5px;color:var(--red-dark);">Impossible de récupérer la liste des sauvegardes.</p>';
+  }
 }
 let syncStatus='ok'; // 'ok' | 'saving' | 'error'
 let syncRetryTimer=null;
@@ -731,6 +815,32 @@ function updateSyncIndicator(){
 }
 async function saveState(){
   syncStatus='saving'; updateSyncIndicator();
+  // Fusion pour limiter les pertes de données quand plusieurs agents vérifient des véhicules
+  // différents en même temps : juste avant d'écrire, on relit la version la plus fraîche du serveur
+  // et on ne remplace QUE le véhicule en cours d'édition sur CET appareil — tous les autres véhicules
+  // viennent de la dernière version connue du serveur, pas d'une copie locale potentiellement périmée.
+  if(currentView && ['check','config','tech'].includes(currentView.type) && currentView.vehicleId){
+    try{
+      const fresh=await window.storage.get(STORAGE_KEY,true);
+      if(fresh && fresh.value){
+        const remoteState=JSON.parse(fresh.value);
+        if(remoteState && Array.isArray(remoteState.vehicles)){
+          const editingId=currentView.vehicleId;
+          const localVehicle=(state.vehicles||[]).find(v=>v.id===editingId);
+          if(localVehicle){
+            const idx=remoteState.vehicles.findIndex(v=>v.id===editingId);
+            if(idx>=0) remoteState.vehicles[idx]=localVehicle; else remoteState.vehicles.push(localVehicle);
+          }
+          // Les réserves/réparations/suivi hôpital restent la version de cet appareil : ce sont des
+          // actions souvent liées à la vérification en cours (ex: piocher en réserve depuis ce véhicule).
+          remoteState.reserves=state.reserves;
+          remoteState.repairs=state.repairs;
+          remoteState.hospitalTracking=state.hospitalTracking;
+          state=remoteState;
+        }
+      }
+    }catch(e){ console.error('Fusion avant sauvegarde impossible, on sauvegarde quand même la copie locale :',e); }
+  }
   try{
     await window.storage.set(STORAGE_KEY,JSON.stringify(state),true);
     syncStatus='ok'; updateSyncIndicator();
@@ -827,6 +937,10 @@ function openMyCentreModal(){
 }
 myCentrePill.addEventListener('click',openMyCentreModal);
 document.getElementById('helpBtn').addEventListener('click',()=>{currentView={type:'help',tab:'tuto'};render();});
+document.getElementById('toolsBtn').addEventListener('click',()=>requireAdmin(()=>{
+  document.body.classList.add('admin-unlocked');
+  render();
+}));
 // Gestion générique des menus "⋯ Plus" (mobile) : un seul écouteur global, fonctionne quel que soit
 // le nombre de re-rendus de la page, pas besoin de le rebrancher à chaque fois.
 document.addEventListener('click',e=>{
@@ -923,7 +1037,7 @@ function render(){
   else if(currentView.type==='hospitalTracking')renderHospitalTracking();
   else if(currentView.type==='help')renderHelp(currentView.tab);
 }
-const APP_VERSION='1.23.0'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.25.0'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -1187,10 +1301,11 @@ function renderDashboard(){
         <button class="btn ghost" id="dailyRecapBtn">📋 Récap du jour</button>
         <button class="btn ghost" id="repairsBtn">🔧 Suivi réparations${state.repairs.filter(r=>!r.returned).length?' ('+state.repairs.filter(r=>!r.returned).length+')':''}</button>
         <button class="btn ghost" id="hospitalTrackingBtn">🏥 Suivi matériel en CH${state.hospitalTracking.filter(h=>!h.returned).length?' ('+state.hospitalTracking.filter(h=>!h.returned).length+')':''}</button>
-        <button class="btn ghost" id="securityBtn">${state.adminPasswordHash?'🔒':'🔓'} Sécurité</button>
-        <button class="btn ghost small" id="dupBtn">🔍 Détecter les doublons</button>
+        <button class="btn ghost" id="securityBtn" title="Sécurité">${state.adminPasswordHash?'🔒':'🔓'}</button>
+        ${adminAccessible()?'<button class="btn ghost small" id="dupBtn">🔍 Détecter les doublons</button>':''}
         <button class="btn ghost small" id="exportBackupBtn">💾 Sauvegarder tout</button>
-        <button class="btn ghost small" id="restoreBackupBtn">📤 Restaurer une sauvegarde</button>
+        ${adminAccessible()?'<button class="btn ghost small" id="restoreBackupBtn">📤 Restaurer une sauvegarde</button>':''}
+        <button class="btn ghost small" id="dailyBackupsBtn">🗓 Sauvegardes automatiques</button>
       </div></div>
     </div></div>
     <div class="summary-strip">
@@ -1308,8 +1423,7 @@ function renderDashboard(){
         ${wrongLocationCount(v)?`<div class="alert-line">📍 ${wrongLocationCount(v)} emplacement(s) signalé(s) comme incorrect(s)</div>`:''}
         <div class="card-actions">
           <button class="btn small primary" data-check="${v.id}">${isVehicleReadOnlyForMe(v)?'Consulter':'Vérifier'}</button>
-          <button class="btn small ghost" data-config="${v.id}">Configurer</button>
-          <button class="btn small ghost" data-dup="${v.id}">Dupliquer</button>
+          ${adminAccessible()?`<button class="btn small ghost" data-config="${v.id}">Configurer</button><button class="btn small ghost" data-dup="${v.id}">Dupliquer</button>`:''}
           <button class="btn small ghost" data-qr="${v.id}">QR</button>
           <button class="btn small ghost" data-order="${v.id}">🛒 Commande</button>
           ${v.currentCis===v.cis||!v.currentCis?`<button class="btn small ghost" data-loan="${v.id}">🔄 Prêter</button>`:`<button class="btn small ghost" data-return-loan="${v.id}">↩ Marquer retour</button>`}
@@ -1320,7 +1434,7 @@ function renderDashboard(){
     });
     html+='</div>';
   }
-  html+=`<div class="dash-header" style="margin-top:28px;"><div><h2>Réserves</h2><p class="big">Stocks du centre</p></div><button class="btn ghost" id="importSeedBtn">📥 Importer le catalogue depuis les inventaires</button></div><div class="grid">`;
+  html+=`<div class="dash-header" style="margin-top:28px;"><div><h2>Réserves</h2><p class="big">Stocks du centre</p></div>${adminAccessible()?'<button class="btn ghost" id="importSeedBtn">📥 Importer le catalogue depuis les inventaires</button>':''}</div><div class="grid">`;
   Object.keys(RESERVE_CATS).forEach(cat=>{
     const items=state.reserves[cat]||[];
     const low=items.filter(it=>it.qtyMin>0 && it.qty<it.qtyMin).length;
@@ -1382,10 +1496,11 @@ function renderDashboard(){
   }));
   bindVehicleDragDrop();
   document.getElementById('securityBtn').addEventListener('click',openAdminSettingsModal);
-  document.getElementById('dupBtn').addEventListener('click',()=>requireAdmin(openDuplicatesModal));
+  const dupB=document.getElementById('dupBtn'); if(dupB) dupB.addEventListener('click',()=>requireAdmin(openDuplicatesModal));
   document.getElementById('exportBackupBtn').addEventListener('click',exportFullBackup);
-  document.getElementById('restoreBackupBtn').addEventListener('click',()=>requireAdmin(openRestoreBackupModal));
-  document.getElementById('importSeedBtn').addEventListener('click',()=>requireAdmin(importSeedCatalogue));
+  const restB=document.getElementById('restoreBackupBtn'); if(restB) restB.addEventListener('click',()=>requireAdmin(openRestoreBackupModal));
+  document.getElementById('dailyBackupsBtn').addEventListener('click',openDailyBackupsModal);
+  const impSeedB=document.getElementById('importSeedBtn'); if(impSeedB) impSeedB.addEventListener('click',()=>requireAdmin(importSeedCatalogue));
 }
 
 async function duplicateVehicle(id){
@@ -3525,7 +3640,7 @@ function renderCheck(vehicleId){
       <div class="actions-dropdown"><button type="button" class="dropdown-toggle">⋯ Plus</button><div class="dropdown-panel">
         ${readOnly?'':'<button class="btn ghost small" id="voiceSettingsBtn">🔊 Voix</button><button class="btn ghost small" id="interventionBtn">🚑 Retour d\'intervention</button><button class="btn ghost small" id="closeCheckBtn">✓ Clôturer '+(mode==='daily'?'le contrôle de départ':'la vérification')+'</button>'}
         <button class="btn ghost small" id="orderBtn">🛒 Commande</button>
-        ${readOnly?'':'<button class="btn ghost small" id="toConfigTab">Configurer</button>'}
+        ${readOnly||!adminAccessible()?'':'<button class="btn ghost small" id="toConfigTab">Configurer</button>'}
         <button class="btn ghost small" id="printCheckBtn">🖨 Imprimer</button>
         ${readOnly?'':'<button class="btn ghost small" id="restartCheckBtn" style="color:var(--red-dark);">🔄 Recommencer l\'inventaire</button>'}
       </div></div>
@@ -3584,15 +3699,15 @@ function renderCheck(vehicleId){
       <div class="check-emp-head" data-toggle-emp="${emp.id}"><span>${escapeHtml(emp.name)}</span><span class="pct" style="color:${es.overall==='ok'?'#8fd6ac':es.overall==='warn'?'#ffd699':'#ff9e9e'};">${es.pct}%</span></div>`;
     if(isOpen){
       if((emp.photos||[]).length){html+=`<div class="check-emp-photos">${emp.photos.map(p=>`<img src="${p}" style="cursor:pointer;" onclick="openPhotoLightbox(this.src)">`).join('')}</div>`;}
-      emp.articles.forEach(a=>{
+      emp.articles.forEach((a,ai)=>{
         if(mode==='daily' && !a.dailyCheck) return;
         const hasChildren=isContainerArt(a);
         const isBottle=a.regType==='O2'||a.regType==='ARI';
         const o2Liters=isBottle && a.volumeL && a.pressureBar ? Math.round(parseFloat(a.volumeL)*parseFloat(a.pressureBar)) : null;
         const gasLabel=a.regType==='ARI'?'L air':'L O2';
         const dis=readOnly?' disabled':'';
-        html+=`<div class="check-article">
-          <div class="check-article-name">${escapeHtml(a.name)} <span class="article-sub">(qté ${a.qty})</span> ${a.regType?`<span class="reg-badge ${isSoonOrOverdue(a.regDueDate)==='overdue'?'overdue':(isSoonOrOverdue(a.regDueDate)==='soon'?'soon':'')}">${REG_TYPES[a.regType]}${a.regDueDate?' — '+fmtDate(a.regDueDate):''}</span>`:''}${a.wrongLocation?' <span class="reg-badge overdue">📍 Mauvais emplacement signalé</span>':''}${a.dailyCheck?' <span class="tag">☀ Quotidien</span>':''}
+        html+=`<div class="check-article" ${readOnly?'':`draggable="true" data-check-art-drag="${emp.id}:${a.id}"`}>
+          <div class="check-article-name">${readOnly?'':`<span class="reorder-col" style="display:inline-flex;gap:2px;vertical-align:middle;margin-right:4px;"><button data-check-art-up="${emp.id}:${a.id}" ${ai===0?'disabled':''} title="Monter">◀</button><button data-check-art-down="${emp.id}:${a.id}" ${ai===emp.articles.length-1?'disabled':''} title="Descendre">▶</button></span>`}${escapeHtml(a.name)} <span class="article-sub">(qté ${a.qty})</span> ${a.regType?`<span class="reg-badge ${isSoonOrOverdue(a.regDueDate)==='overdue'?'overdue':(isSoonOrOverdue(a.regDueDate)==='soon'?'soon':'')}">${REG_TYPES[a.regType]}${a.regDueDate?' — '+fmtDate(a.regDueDate):''}</span>`:''}${a.wrongLocation?' <span class="reg-badge overdue">📍 Mauvais emplacement signalé</span>':''}${a.dailyCheck?' <span class="tag">☀ Quotidien</span>':''}
             <button class="comment-btn ${a.comments&&a.comments.length?'has-comment':''}"${dis} title="Ajouter un commentaire" data-comment-art="${emp.id}:${a.id}">💬</button>
             <button class="comment-btn ${a.wrongLocation?'has-comment':''}"${dis} title="${a.wrongLocation?'Retirer le signalement':'Signaler un mauvais emplacement'}" data-wrong-loc-art="${emp.id}:${a.id}">📍</button>
           </div>
@@ -3665,6 +3780,41 @@ function renderCheck(vehicleId){
     await saveState(); render();
   })));
   document.getElementById('collapseAllBtn').addEventListener('click',()=>{checkOpenEmps=new Set(); render();});
+  app.querySelectorAll('[data-check-art-up]').forEach(el=>el.addEventListener('click',async()=>{
+    const[empId,artId]=el.dataset.checkArtUp.split(':'); const emp=v.emplacements.find(e=>e.id===empId); if(!emp)return;
+    const idx=emp.articles.findIndex(x=>x.id===artId); if(idx<=0)return;
+    [emp.articles[idx-1],emp.articles[idx]]=[emp.articles[idx],emp.articles[idx-1]];
+    await saveState(); render();
+  }));
+  app.querySelectorAll('[data-check-art-down]').forEach(el=>el.addEventListener('click',async()=>{
+    const[empId,artId]=el.dataset.checkArtDown.split(':'); const emp=v.emplacements.find(e=>e.id===empId); if(!emp)return;
+    const idx=emp.articles.findIndex(x=>x.id===artId); if(idx<0||idx>=emp.articles.length-1)return;
+    [emp.articles[idx],emp.articles[idx+1]]=[emp.articles[idx+1],emp.articles[idx]];
+    await saveState(); render();
+  }));
+  (function bindCheckArtDragDrop(){
+    let draggedKey=null;
+    app.querySelectorAll('[data-check-art-drag]').forEach(row=>{
+      row.addEventListener('dragstart',e=>{ draggedKey=row.dataset.checkArtDrag; row.classList.add('dragging'); e.stopPropagation(); });
+      row.addEventListener('dragend',()=>row.classList.remove('dragging'));
+      row.addEventListener('dragover',e=>{ e.preventDefault(); row.classList.add('drag-over'); });
+      row.addEventListener('dragleave',()=>row.classList.remove('drag-over'));
+      row.addEventListener('drop',async e=>{
+        e.preventDefault(); e.stopPropagation(); row.classList.remove('drag-over');
+        if(!draggedKey)return;
+        const[fromEmpId,fromArtId]=draggedKey.split(':');
+        const[toEmpId,toArtId]=row.dataset.checkArtDrag.split(':');
+        if(fromEmpId!==toEmpId||fromArtId===toArtId)return;
+        const emp=v.emplacements.find(x=>x.id===fromEmpId); if(!emp)return;
+        const fromIdx=emp.articles.findIndex(a=>a.id===fromArtId);
+        const toIdx=emp.articles.findIndex(a=>a.id===toArtId);
+        if(fromIdx<0||toIdx<0)return;
+        const[moved]=emp.articles.splice(fromIdx,1);
+        emp.articles.splice(toIdx,0,moved);
+        await saveState(); render();
+      });
+    });
+  })();
   const closeBtn=document.getElementById('closeCheckBtn');
   if(closeBtn) closeBtn.addEventListener('click',async()=>{
     const st= mode==='daily' ? await closeDailyCheck(v) : await closeVehicleCheck(v);
@@ -3823,7 +3973,7 @@ function renderTech(vehicleId){
   let html=`<div class="back-link" id="backLink">← Retour au tableau de bord</div>
   <div class="detail-header">
     <div class="detail-title"><h2>${escapeHtml(v.name)}</h2><div class="code">Vérification de l'engin${t.lastCheck?' · dernière le '+fmtDate(t.lastCheck)+(t.verifiedBy?' — '+escapeHtml(t.verifiedBy):''):''}</div></div>
-    <div class="detail-actions"><button class="btn ghost small" id="toCheckTab2">Vérification matériel</button><button class="btn ghost small" id="toConfigTab2">Configurer</button></div>
+    <div class="detail-actions"><button class="btn ghost small" id="toCheckTab2">Vérification matériel</button>${adminAccessible()?'<button class="btn ghost small" id="toConfigTab2">Configurer</button>':''}</div>
   </div>
   <div class="mode-tabs"><div class="mode-tab" id="toCheckTab3">Vérification matériel</div><div class="mode-tab active">Vérification engin</div></div>
 
@@ -3894,7 +4044,7 @@ function renderTech(vehicleId){
   document.getElementById('backLink').addEventListener('click',()=>{currentView={type:'dashboard'};render();});
   document.getElementById('toCheckTab2').addEventListener('click',()=>{currentView={type:'check',vehicleId:v.id};render();});
   document.getElementById('toCheckTab3').addEventListener('click',()=>{currentView={type:'check',vehicleId:v.id};render();});
-  document.getElementById('toConfigTab2').addEventListener('click',()=>requireAdmin(()=>{currentView={type:'config',vehicleId:v.id};render();}));
+  const toConfigBtn2=document.getElementById('toConfigTab2'); if(toConfigBtn2) toConfigBtn2.addEventListener('click',()=>requireAdmin(()=>{currentView={type:'config',vehicleId:v.id};render();}));
   document.getElementById('tCarb').addEventListener('input',e=>{
     document.getElementById('tCarbVal').textContent=e.target.value+'%';
     document.getElementById('tCarbGauge').innerHTML=renderGauge(parseInt(e.target.value),v.fuelMinThreshold,'tfuel');
@@ -4018,7 +4168,7 @@ function pickBestFrenchVoice(){
 }
 function speak(text,cb){
   speechSynthesis.cancel();
-  const u=new SpeechSynthesisUtterance(text); u.lang='fr-FR'; u.rate=0.98; u.pitch=1.0;
+  const u=new SpeechSynthesisUtterance(text); u.lang='fr-FR'; u.rate=parseFloat(localStorage.getItem('sp-voice-rate')||'0.98'); u.pitch=1.0;
   const voice=pickBestFrenchVoice(); if(voice) u.voice=voice;
   u.onend=()=>{if(cb)cb();};
   speechSynthesis.speak(u);
@@ -4032,6 +4182,10 @@ function openVoicePickerModal(){
   overlay.innerHTML=`<div class="modal"><h3>🔊 Choisir la voix</h3>
     <p style="font-size:12px;color:var(--muted);">Les voix marquées "réseau" sont généralement bien plus naturelles que les voix système locales, mais nécessitent une connexion internet.</p>
     <div id="voiceList" style="max-height:280px;overflow-y:auto;margin:10px 0;"></div>
+    <div class="field"><label>Vitesse de la dictée</label>
+      <input type="range" id="voiceRateRange" min="0.6" max="1.4" step="0.05" value="${localStorage.getItem('sp-voice-rate')||'0.98'}">
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);"><span>Plus lent</span><span id="voiceRateVal">${localStorage.getItem('sp-voice-rate')||'0.98'}×</span><span>Plus rapide</span></div>
+    </div>
     <div class="modal-actions"><button class="btn ghost" id="voiceTestBtn">🔈 Tester</button><button class="btn primary" id="voicePickerClose">Fermer</button></div></div>`;
   document.body.appendChild(overlay);
   const listEl=overlay.querySelector('#voiceList');
@@ -4045,6 +4199,10 @@ function openVoicePickerModal(){
   }
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
   document.getElementById('voicePickerClose').addEventListener('click',()=>overlay.remove());
+  document.getElementById('voiceRateRange').addEventListener('input',e=>{
+    localStorage.setItem('sp-voice-rate',e.target.value);
+    document.getElementById('voiceRateVal').textContent=e.target.value+'×';
+  });
   document.getElementById('voiceTestBtn').addEventListener('click',()=>{
     const checked=overlay.querySelector('input[name="voicePick"]:checked');
     if(checked){ preferredVoiceURI=checked.value; localStorage.setItem('sp-voice-uri',preferredVoiceURI); }
