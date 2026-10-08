@@ -592,7 +592,16 @@ async function loadCisRegistry(){
     const res=await window.storage.get(CIS_REGISTRY_KEY,true);
     if(res && res.value){
       const remote=JSON.parse(res.value);
-      if(Array.isArray(remote) && remote.length) CIS_REGISTRY=remote;
+      if(Array.isArray(remote) && remote.length){
+        // Correction ponctuelle : le registre partagé a été initialisé une seule fois, avant la
+        // correction de la faute de frappe "CATELAS" → "CATELAT" dans le code. Cette liste codée en dur
+        // ayant déjà été corrigée ne change rien pour un centre déjà enregistré — on corrige donc aussi
+        // la copie partagée ici, une fois, si on la retrouve encore sous l'ancien nom.
+        let fixed=false;
+        remote.forEach(c=>{ if(c && c.name==='CSP CATELAS'){ c.name='CSP CATELAT'; fixed=true; } });
+        CIS_REGISTRY=remote;
+        if(fixed){ try{ await window.storage.set(CIS_REGISTRY_KEY,JSON.stringify(CIS_REGISTRY),true); }catch(e){} }
+      }
     } else {
       // Premier lancement du registre partagé : on l'initialise avec la liste de secours actuelle.
       await window.storage.set(CIS_REGISTRY_KEY,JSON.stringify(CIS_REGISTRY),true);
@@ -940,6 +949,13 @@ function userIsTyping(){
   const ae=document.activeElement;
   return !!(ae && ['INPUT','TEXTAREA','SELECT'].includes(ae.tagName) && app && app.contains(ae));
 }
+// Une fenêtre modale ouverte (ex: "Déplacer un article", "Modifier fiche"...) retient souvent une
+// référence directe à un objet du véhicule/état capturée à son ouverture. Si l'état est remplacé en
+// arrière-plan pendant qu'elle est ouverte (fusion périodique ci-dessous), cette référence devient
+// périmée et la modification faite dans la modale peut se perdre silencieusement, ou s'appliquer à un
+// objet fantôme déconnecté du nouvel état. On évite donc de remplacer l'état tant qu'une modale est
+// ouverte — exactement comme on évite déjà de reconstruire l'écran sous les doigts de quelqu'un qui tape.
+function anyModalOpen(){ return !!document.querySelector('.overlay'); }
 async function checkAndApplyScheduledResets(isInitialLoad){
   // Remise à zéro automatique (quotidienne à 8h, hebdomadaire/mensuelle selon la fréquence). Appelée au
   // chargement, toutes les 5 minutes, et au retour au premier plan.
@@ -988,12 +1004,14 @@ async function checkAndApplyScheduledResets(isInitialLoad){
     // Contrôle périodique : on intègre le résultat serveur SANS jamais écraser le travail local.
     if(!remoteValue) return false;
     if(userIsTyping()) return false; // ne pas reconstruire l'écran sous les doigts de quelqu'un qui saisit
+    if(anyModalOpen()) return false; // idem : une modale ouverte peut retenir une référence à l'ancien état
     const before=JSON.stringify(state);
     const remoteObj=normalizeStateObject(JSON.parse(remoteValue));
     const newBaseline=JSON.parse(JSON.stringify(remoteObj));
     state=mergeStateForSave(remoteObj);   // modifs locales non envoyées conservées, le reste vient du serveur
     lastSyncedState=newBaseline;
     normalizeStateObject(state);
+    updateSuspiciousMergeBanner();
     if(JSON.stringify(state)!==before) render(); // synchrone : aucun clic ne peut s'intercaler avant
     return remoteChanged;
   } finally { resetCheckBusy=false; }
@@ -1340,6 +1358,7 @@ function updateSyncIndicator(){
   else { el.textContent='💾 Enregistré'; el.className='sync-status ok'; }
   el.style.cursor='pointer'; el.title='Diagnostic de sauvegarde';
   updateSaveProblemBanner();
+  updateSuspiciousMergeBanner();
 }
 function updateSaveProblemBanner(){
   // Bandeau rouge persistant dès que l'échec dure (2 tentatives ratées d'affilée) : un agent doit savoir
@@ -1357,8 +1376,26 @@ function updateSaveProblemBanner(){
   b.textContent='⚠ Tes modifications ne sont PAS enregistrées ('+why+'). Ne ferme pas l\'appli — touche ici pour le diagnostic.';
   b.style.display='block';
 }
+// Bandeau d'alerte si le garde-fou anti-suppression-massive (voir mergeArraysByIdDiff) s'est déclenché :
+// ça signifie qu'une partie des véhicules/réserves avait disparu localement (bug ponctuel quelconque)
+// et que la fusion a refusé de propager cette disparition — mieux vaut recharger la page pour repartir
+// d'un état propre plutôt que de continuer avec un affichage local potentiellement incohérent.
+function updateSuspiciousMergeBanner(){
+  let b=document.getElementById('suspiciousMergeBanner');
+  const show = !!suspiciousMergeBlockedAt;
+  if(!show){ if(b) b.style.display='none'; return; }
+  if(!b){
+    b=document.createElement('div'); b.id='suspiciousMergeBanner';
+    b.style.cssText='position:fixed;left:0;right:0;top:0;z-index:9999;background:#a6660f;color:#fff;padding:10px 14px;font-size:13px;font-weight:600;text-align:center;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.4);';
+    b.addEventListener('click',()=>{ if(confirm('Une anomalie a été détectée et bloquée automatiquement (des véhicules ou réserves semblaient avoir disparu localement). Recharger la page maintenant pour repartir d\'un état propre ?')) location.reload(); });
+    document.body.appendChild(b);
+  }
+  b.textContent='⚠ Anomalie détectée et bloquée (une suppression massive a été évitée) — touche ici pour recharger la page.';
+  b.style.display='block';
+}
 let lastSyncedState=null; // dernière version connue comme synchronisée (chargée ou sauvegardée) — sert de référence pour détecter ce qui a vraiment changé localement
-function mergeArraysByIdDiff(localArr,baselineArr,remoteArr){
+let suspiciousMergeBlockedAt=null; // dernière fois qu'un garde-fou anti-suppression-massive a bloqué une fusion (diagnostic)
+function mergeArraysByIdDiff(localArr,baselineArr,remoteArr,guard){
   // Pour chaque élément déjà présent côté serveur : si son contenu local est identique à la dernière
   // version connue (le "baseline"), il n'a pas été touché ici — on garde la version DISTANTE (plus
   // fraîche, potentiellement modifiée par un autre agent). S'il diffère du baseline, il a été modifié
@@ -1373,13 +1410,38 @@ function mergeArraysByIdDiff(localArr,baselineArr,remoteArr){
   if(!Array.isArray(baselineArr)) baselineArr=[];
   const baselineById={}; baselineArr.forEach(x=>{ if(x&&x.id) baselineById[x.id]=x; });
   const localById={}; localArr.forEach(x=>{ if(x&&x.id) localById[x.id]=x; });
+  // GARDE-FOU anti-suppression-massive : une suppression normale se fait UN élément à la fois (bouton
+  // "Supprimer" avec confirmation). Si la fusion s'apprête à faire disparaître d'un coup une grosse part
+  // de ce qui était connu — signe quasi certain d'un état local corrompu ou vidé par un bug ponctuel
+  // (plutôt qu'une vraie suite de suppressions volontaires) — on refuse ces suppressions-là : on garde
+  // les éléments distants correspondants plutôt que de les effacer silencieusement partout. C'est la
+  // protection ajoutée après l'incident du 08/10/2026 (disparition de tout le parc pendant un usage
+  // simultané par plusieurs agents).
+  let deletionCandidates=[];
+  baselineArr.forEach(b=>{
+    if(!b||!b.id) return;
+    if(localById[b.id]===undefined && baselineById[b.id]!==undefined){
+      // candidat à la suppression : présent dans la référence, absent localement
+      if(remoteArr.find(r=>r&&r.id===b.id)) deletionCandidates.push(b.id); // encore présent côté distant -> suppression réelle à appliquer (ou à bloquer)
+    }
+  });
+  let blockDeletions=false;
+  if(guard && deletionCandidates.length>0){
+    const baseCount=baselineArr.filter(x=>x&&x.id).length;
+    const ratio = baseCount>0 ? deletionCandidates.length/baseCount : 0;
+    if(baseCount>=guard.minBaseline && (deletionCandidates.length>guard.maxAbs || ratio>guard.maxRatio)){
+      blockDeletions=true;
+      suspiciousMergeBlockedAt=Date.now();
+      console.error('[GARDE-FOU] Suppression massive bloquée pour "'+guard.label+'" : '+deletionCandidates.length+'/'+baseCount+' éléments auraient disparu d\'un coup. Conservés côté distant par sécurité.',deletionCandidates);
+    }
+  }
   const result=[];
   remoteArr.forEach(r=>{
     if(!r||!r.id){ result.push(r); return; }
     const loc=localById[r.id];
     const base=baselineById[r.id];
     if(loc===undefined){
-      if(base!==undefined) return; // supprimé ici volontairement → on ne le remet pas
+      if(base!==undefined){ if(blockDeletions){ result.push(r); } return; } // supprimé ici volontairement → on ne le remet pas (sauf si garde-fou déclenché)
       result.push(r); // créé ailleurs entre-temps → on le garde
       return;
     }
@@ -1401,10 +1463,15 @@ function mergeStateForSave(remoteState){
   // Fusionne l'état local dans la dernière version distante connue : on ne garde du local que ce qui
   // a vraiment changé depuis la dernière synchro (comparé au baseline), le reste vient du distant.
   const baseline=lastSyncedState||remoteState;
-  remoteState.vehicles=mergeArraysByIdDiff(state.vehicles,baseline.vehicles,remoteState.vehicles);
+  // Le garde-fou anti-suppression-massive (voir mergeArraysByIdDiff) n'est appliqué qu'aux véhicules et
+  // aux réserves : ce sont les seules listes où une disparition massive serait catastrophique et où une
+  // vraie suite de suppressions volontaires, une par une avec confirmation, ne produit jamais ce profil.
+  const VEHICLE_DELETE_GUARD={label:'véhicules',minBaseline:3,maxAbs:1,maxRatio:0.34};
+  const RESERVE_DELETE_GUARD={label:'réserves',minBaseline:3,maxAbs:2,maxRatio:0.5};
+  remoteState.vehicles=mergeArraysByIdDiff(state.vehicles,baseline.vehicles,remoteState.vehicles,VEHICLE_DELETE_GUARD);
   if(remoteState.reserves && state.reserves){
     Object.keys(RESERVE_CATS).forEach(cat=>{
-      remoteState.reserves[cat]=mergeArraysByIdDiff((state.reserves||{})[cat],(baseline.reserves||{})[cat],remoteState.reserves[cat]);
+      remoteState.reserves[cat]=mergeArraysByIdDiff((state.reserves||{})[cat],(baseline.reserves||{})[cat],remoteState.reserves[cat],RESERVE_DELETE_GUARD);
     });
   }
   remoteState.repairs=mergeArraysByIdDiff(state.repairs,baseline.repairs,remoteState.repairs);
@@ -1946,7 +2013,7 @@ function render(){
     }
   }
 }
-const APP_VERSION='1.56.1'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.57.1'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -4078,14 +4145,20 @@ function buildWeekGridHtml(days){
       const mark = done?'✅':(isFuture?'⬜':'❌');
       const freq=v.checkFrequency||'hebdomadaire';
       const isDailyExceptionDay = freq!=='quotidien' && !(freq==='hebdomadaire' && weekdayIndex(d)===(v.checkWeekday!==undefined?v.checkWeekday:0)) && !(freq==='mensuel' && monthlyOccurrenceDate(d,v.checkMonthlyOccurrence||'first',v.checkMonthlyWeekday||0)===d);
-      html+=`<div data-goto-vehicle-check="${v.id}" style="font-size:11.5px;padding:3px 0;cursor:pointer;display:flex;justify-content:space-between;gap:4px;">${escapeHtml(v.name)}${isDailyExceptionDay?' <span title="Contrôle de départ (items quotidiens)">☀</span>':''}<span>${mark}</span></div>`;
+      // Véhicule en panne/atelier ou prêté à un autre centre : affiché barré en noir plutôt que comme
+      // s'il fallait encore le vérifier — il n'est simplement pas disponible ce jour-là.
+      const unavailable = v.outOfService || v.loanedToCenterId;
+      const unavailTitle = v.outOfService ? 'Indisponible — en panne / à l\'atelier' : (v.loanedToCenterId ? 'Prêté à '+v.loanedToCenterName : '');
+      html+=`<div data-goto-vehicle-check="${v.id}" style="font-size:11.5px;padding:3px 0;cursor:pointer;display:flex;justify-content:space-between;gap:4px;" ${unavailable?`title="${escapeHtml(unavailTitle)}"`:''}><span${unavailable?' style="text-decoration:line-through;color:#1c1c1c;"':''}>${escapeHtml(v.name)}</span>${isDailyExceptionDay?' <span title="Contrôle de départ (items quotidiens)">☀</span>':''}<span>${unavailable?'⛔':mark}</span></div>`;
     });
     html+=`<div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;margin:8px 0 4px;">🔧 Engin</div>`;
     if(!techVehicles.length) html+='<div style="font-size:11px;color:var(--muted);">—</div>';
     techVehicles.forEach(v=>{
       const done=wasDoneOnDay(v,d,true);
       const mark = done?'✅':(isFuture?'⬜':'❌');
-      html+=`<div data-goto-vehicle-tech="${v.id}" style="font-size:11.5px;padding:3px 0;cursor:pointer;display:flex;justify-content:space-between;gap:4px;">${escapeHtml(v.name)}<span>${mark}</span></div>`;
+      const unavailable = v.outOfService || v.loanedToCenterId;
+      const unavailTitle = v.outOfService ? 'Indisponible — en panne / à l\'atelier' : (v.loanedToCenterId ? 'Prêté à '+v.loanedToCenterName : '');
+      html+=`<div data-goto-vehicle-tech="${v.id}" style="font-size:11.5px;padding:3px 0;cursor:pointer;display:flex;justify-content:space-between;gap:4px;" ${unavailable?`title="${escapeHtml(unavailTitle)}"`:''}><span${unavailable?' style="text-decoration:line-through;color:#1c1c1c;"':''}>${escapeHtml(v.name)}</span><span>${unavailable?'⛔':mark}</span></div>`;
     });
     html+='</div>';
   });
@@ -4273,7 +4346,7 @@ function renderWeekPlan(weekOffset){
       <button class="btn ghost small" id="printScheduleBtn">🖨 Imprimer le planning</button>
     </div>
   </div>
-  <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">✅ = fait ce jour-là · ❌ = pas encore fait (jour passé ou aujourd'hui) · un véhicule non listé ce jour-là n'est simplement pas prévu — clique sur un véhicule pour accéder directement à sa vérification.</div>
+  <div style="font-size:11px;color:var(--muted);margin-bottom:12px;">✅ = fait ce jour-là · ❌ = pas encore fait (jour passé ou aujourd'hui) · nom barré en noir + ⛔ = véhicule en panne/atelier ou prêté à un autre centre · un véhicule non listé ce jour-là n'est simplement pas prévu — clique sur un véhicule pour accéder directement à sa vérification.</div>
   ${buildWeekGridHtml(days)}`;
   app.innerHTML=html;
   document.getElementById('backLink').addEventListener('click',()=>{currentView={type:'dashboard'};render();});
@@ -4988,7 +5061,16 @@ function openVehicleModal(existing){
 }
 
 /* ---------- CONFIG VIEW ---------- */
+// IMPORTANT : ces modales peuvent rester ouvertes plusieurs secondes (le temps de choisir la cible).
+// Pendant ce temps, l'état global "state" peut être remplacé par une sauvegarde ou une fusion
+// périodique (voir anyModalOpen() — qui empêche la fusion périodique tant qu'une modale est ouverte,
+// mais pas une sauvegarde déclenchée par CETTE modification elle-même ou par un autre appareil). On ne
+// capture donc plus les objets véhicule/emplacement/article par référence : seulement leurs identifiants,
+// et on les RE-RÉSOUT depuis l'état COURANT au moment du clic sur "Déplacer", pour ne jamais écrire dans
+// des objets devenus fantômes (ce qui ferait perdre le déplacement, voire pire selon ce qui a changé
+// entre-temps). Si la cible choisie n'existe plus, on prévient et on annule plutôt que de planter.
 function openMoveArticleModal(v,empId,artId){
+  const vehicleId=v.id;
   const{a,emp:currentEmp}=findArt(v,empId+':'+artId);
   const others=v.emplacements.filter(e=>e.id!==empId);
   if(!others.length){ alert('Il n\'y a aucun autre emplacement sur ce véhicule.'); return; }
@@ -5002,13 +5084,20 @@ function openMoveArticleModal(v,empId,artId){
   document.getElementById('moveArtCancel').addEventListener('click',()=>overlay.remove());
   document.getElementById('moveArtConfirm').addEventListener('click',async()=>{
     const targetId=document.getElementById('moveArtTarget').value;
-    const targetEmp=v.emplacements.find(e=>e.id===targetId); if(!targetEmp)return;
-    currentEmp.articles=currentEmp.articles.filter(x=>x.id!==artId);
-    targetEmp.articles.push(a);
+    // Re-résolution à partir de l'état COURANT (pas des objets capturés à l'ouverture de la modale).
+    const liveV=state.vehicles.find(x=>x.id===vehicleId);
+    if(!liveV){ alert('Ce véhicule n\'existe plus — déplacement annulé.'); overlay.remove(); return; }
+    const liveCurrentEmp=liveV.emplacements.find(e=>e.id===empId);
+    const liveA=liveCurrentEmp && liveCurrentEmp.articles.find(x=>x.id===artId);
+    const liveTargetEmp=liveV.emplacements.find(e=>e.id===targetId);
+    if(!liveCurrentEmp || !liveA || !liveTargetEmp){ alert('L\'emplacement ou l\'article a changé entre-temps — déplacement annulé, réessaie.'); overlay.remove(); render(); return; }
+    liveCurrentEmp.articles=liveCurrentEmp.articles.filter(x=>x.id!==artId);
+    liveTargetEmp.articles.push(liveA);
     overlay.remove(); render(); saveState();
   });
 }
 function openMoveSubModal(v,empId,artId,subId){
+  const vehicleId=v.id;
   const{a}=findArt(v,empId+':'+artId);
   const sub=a.sousArticles.find(s=>s.id===subId); if(!sub)return;
   const targets=[];
@@ -5024,13 +5113,19 @@ function openMoveSubModal(v,empId,artId,subId){
   document.getElementById('moveSubCancel').addEventListener('click',()=>overlay.remove());
   document.getElementById('moveSubConfirm').addEventListener('click',async()=>{
     const targetArtId=document.getElementById('moveSubTarget').value;
+    // Re-résolution complète à partir de l'état COURANT (voir commentaire au-dessus de openMoveArticleModal).
+    const liveV=state.vehicles.find(x=>x.id===vehicleId);
+    if(!liveV){ alert('Ce véhicule n\'existe plus — déplacement annulé.'); overlay.remove(); return; }
+    const liveCurrentEmp=liveV.emplacements.find(e=>e.id===empId);
+    const liveA=liveCurrentEmp && liveCurrentEmp.articles.find(x=>x.id===artId);
+    const liveSub=liveA && liveA.sousArticles && liveA.sousArticles.find(x=>x.id===subId);
     let targetArt=null;
-    v.emplacements.forEach(e=>e.articles.forEach(art=>{ if(art.id===targetArtId) targetArt=art; }));
-    if(!targetArt)return;
-    a.sousArticles=a.sousArticles.filter(x=>x.id!==subId);
-    a.isContainer=a.sousArticles.length>0;
+    liveV.emplacements.forEach(e=>e.articles.forEach(art=>{ if(art.id===targetArtId) targetArt=art; }));
+    if(!liveA || !liveSub || !targetArt){ alert('L\'article ou le sous-article a changé entre-temps — déplacement annulé, réessaie.'); overlay.remove(); render(); return; }
+    liveA.sousArticles=liveA.sousArticles.filter(x=>x.id!==subId);
+    liveA.isContainer=liveA.sousArticles.length>0;
     targetArt.sousArticles=targetArt.sousArticles||[];
-    targetArt.sousArticles.push(sub);
+    targetArt.sousArticles.push(liveSub);
     targetArt.isContainer=true;
     overlay.remove(); render(); saveState();
   });
