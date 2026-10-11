@@ -579,7 +579,7 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
 // est inaccessible) — Péronne y reste toujours pour garantir la continuité des appareils déjà en service.
 let CIS_REGISTRY=[
   {id:'peronne', name:'CSP Péronne', code:'80PE1'},
-  {id:'catelat', name:'CSP CATELAT', code:'80CA1'},
+  {id:'catelat', name:'CSP CATELAS', code:'80CA1'},
   {id:'moreuil', name:'CS MOREUIL', code:'80MO1'},
   {id:'roisel', name:'CS ROISEL', code:'80RO1'}
 ];
@@ -593,12 +593,12 @@ async function loadCisRegistry(){
     if(res && res.value){
       const remote=JSON.parse(res.value);
       if(Array.isArray(remote) && remote.length){
-        // Correction ponctuelle : le registre partagé a été initialisé une seule fois, avant la
-        // correction de la faute de frappe "CATELAS" → "CATELAT" dans le code. Cette liste codée en dur
-        // ayant déjà été corrigée ne change rien pour un centre déjà enregistré — on corrige donc aussi
-        // la copie partagée ici, une fois, si on la retrouve encore sous l'ancien nom.
+        // Correction ponctuelle : le registre partagé a été initialisé une seule fois, avec la faute de
+        // frappe "CSP CATELAT" au lieu du vrai nom "CSP CATELAS". Cette liste codée en dur ayant déjà été
+        // corrigée ne change rien pour un centre déjà enregistré — on corrige donc aussi la copie
+        // partagée ici, une fois, si on la retrouve encore sous l'ancien nom.
         let fixed=false;
-        remote.forEach(c=>{ if(c && c.name==='CSP CATELAS'){ c.name='CSP CATELAT'; fixed=true; } });
+        remote.forEach(c=>{ if(c && c.name==='CSP CATELAT'){ c.name='CSP CATELAS'; fixed=true; } });
         CIS_REGISTRY=remote;
         if(fixed){ try{ await window.storage.set(CIS_REGISTRY_KEY,JSON.stringify(CIS_REGISTRY),true); }catch(e){} }
       }
@@ -831,15 +831,16 @@ function resetWeeklyTechCheckIfNeeded(v){
   }
   return false;
 }
-// Correction ponctuelle de la faute de frappe "CATELAS" → "CATELAT" : le registre partagé des centres
-// a déjà été corrigé (voir loadCisRegistry), mais le champ "cis"/"currentCis" de chaque véhicule est du
-// texte libre saisi séparément à la création — il ne se met jamais à jour tout seul quand le registre
-// change. On corrige donc ici aussi, partout où le nom apparaît encore, sur n'importe quel véhicule.
-function fixCatelasTypo(str){ return (typeof str==='string') ? str.replace(/catelas/i,'CATELAT') : str; }
+// Correction ponctuelle de la faute de frappe "CATELAT" → "CATELAS" (le vrai nom) : le registre partagé
+// des centres a déjà été corrigé (voir loadCisRegistry), mais le champ "cis"/"currentCis" de chaque
+// véhicule est du texte libre saisi séparément à la création — il ne se met jamais à jour tout seul
+// quand le registre change. On corrige donc ici aussi, partout où le nom apparaît encore, sur n'importe
+// quel véhicule.
+function fixCatelasTypo(str){ return (typeof str==='string') ? str.replace(/catelat/i,'CATELAS') : str; }
 function ensureVehicleShape(v){
-  if(v.cis && /catelas/i.test(v.cis)) v.cis=fixCatelasTypo(v.cis);
-  if(v.currentCis && /catelas/i.test(v.currentCis)) v.currentCis=fixCatelasTypo(v.currentCis);
-  if(v.loanedToCenterName && /catelas/i.test(v.loanedToCenterName)) v.loanedToCenterName=fixCatelasTypo(v.loanedToCenterName);
+  if(v.cis && /catelat/i.test(v.cis)) v.cis=fixCatelasTypo(v.cis);
+  if(v.currentCis && /catelat/i.test(v.currentCis)) v.currentCis=fixCatelasTypo(v.currentCis);
+  if(v.loanedToCenterName && /catelat/i.test(v.loanedToCenterName)) v.loanedToCenterName=fixCatelasTypo(v.loanedToCenterName);
   if(!v.techCheck) v.techCheck=defaultTechCheck();
   if(!v.techCheck.carrosseriePhotos) v.techCheck.carrosseriePhotos=[];
   resetWeeklyTechCheckIfNeeded(v);
@@ -2021,7 +2022,7 @@ function render(){
     }
   }
 }
-const APP_VERSION='1.57.2'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.57.3'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
