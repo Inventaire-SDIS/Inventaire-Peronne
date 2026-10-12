@@ -523,7 +523,18 @@ body.big-buttons .check-sub-status-buttons .check-status-btn{padding:16px 4px;fo
   .article-row{grid-template-columns:22px 1fr;}
   .status-buttons,.qty-col{grid-column:2;}
   .summary-strip{grid-template-columns:repeat(2,1fr);}
+  /* Les lignes de sous-article (et, imbriquées dedans, de sous-sous-article) gardaient une grille à
+     colonnes fixes même sur petit écran, ce qui forçait du débordement horizontal au lieu de passer à la
+     ligne — un champ pouvait alors se retrouver hors de l'écran. On repasse en une seule colonne, tout
+     s'empile proprement et reste dans la largeur de l'écran. */
+  .sub-row{grid-template-columns:1fr;}
+  .sub-row>div:first-child{min-width:0 !important;width:100%;}
+  .sub-sub-list{margin-left:12px !important;padding-left:6px !important;}
 }
+/* Garde-fou général : quel que soit le style en ligne posé sur un champ (largeur fixe, auto...), il ne
+   doit jamais pouvoir dépasser son conteneur et sortir de l'écran — le texte tapé reste visible/défilable
+   À L'INTÉRIEUR du champ plutôt que d'élargir le champ lui-même hors de la zone visible. */
+input,select,textarea{max-width:100%;box-sizing:border-box;}
 </style>
 </head>
 <body>
@@ -682,7 +693,9 @@ function defaultTechCheck(){
   return {km:'',motorisation:'Thermique',carburant:0,adblue:0,eau:0,emulseur:0,additif:0,heureMoteur:'',heurePompe:'',ctDate:'',vidangeDate:'',
     huileOk:true,liquideOk:true,laveGlaceOk:true,adblueOk:true,pneuEtat:'',pressionAV:'',pressionAR:'',
     essuieGlacesOk:true,pareBriseOk:true,retroOk:true,
-    sig:{lumineux:true,sonore:true,croisement:true,route:true,brouillard:true,stop:true},
+    sig:{lumineux:true,sonore:true,croisement:true,route:true,brouillard:true,stop:true,
+      clignotantAVG:true,clignotantAVD:true,clignotantARG:true,clignotantARD:true,
+      feuAVG:true,feuAVD:true,feuARG:true,feuARD:true,interieur:true,plaque:true,gabarit:true},
     commentaire:'',photos:[],carrosseriePhotos:[],verifiedBy:'',lastCheck:''};
 }
 function defaultData(){
@@ -843,6 +856,16 @@ function ensureVehicleShape(v){
   if(v.loanedToCenterName && /catelat/i.test(v.loanedToCenterName)) v.loanedToCenterName=fixCatelasTypo(v.loanedToCenterName);
   if(!v.techCheck) v.techCheck=defaultTechCheck();
   if(!v.techCheck.carrosseriePhotos) v.techCheck.carrosseriePhotos=[];
+  if(!v.techCheck.sig) v.techCheck.sig={};
+  // Nouveaux points de contrôle (feux/clignotants détaillés gauche/droite, éclairages) : sur une
+  // vérification déjà enregistrée, l'absence de ces champs doit être lue comme "pas encore vu", pas
+  // comme une anomalie — on les initialise à "conforme" (true) pour ne pas faire apparaître d'un coup
+  // de fausses anomalies sur tout le parc existant au moment de la mise à jour.
+  ['croisement','route','brouillard','stop','clignotantAVG','clignotantAVD','clignotantARG','clignotantARD',
+   'feuAVG','feuAVD','feuARG','feuARD','interieur','plaque','gabarit'].forEach(k=>{
+    if(v.techCheck.sig[k]===undefined) v.techCheck.sig[k]=true;
+  });
+  if(v.hasGabarit===undefined) v.hasGabarit=true; // feux de gabarit : pertinents surtout sur les gros porteurs — désactivable par véhicule
   resetWeeklyTechCheckIfNeeded(v);
   if(!v.checkFrequency) v.checkFrequency='hebdomadaire';
   if(v.checkWeekday===undefined) v.checkWeekday=0; // 0=Lundi par défaut
@@ -869,6 +892,13 @@ function ensureVehicleShape(v){
   if(!v.checkHistory) v.checkHistory=[];
   if(!v.currentCis) v.currentCis=v.cis||''; // centre qui gère l'engin au quotidien (par défaut : le centre de rattachement)
   if(v.loanedToCenterId===undefined) v.loanedToCenterId='';
+  // Nettoyage : l'ancien "prêt interne" (relabellisation de currentCis dans la même base, remplacé depuis
+  // par le vrai prêt inter-centres ci-dessous) a été retiré de l'appli, mais pouvait laisser currentCis
+  // différent de cis sur un véhicule sans qu'il soit réellement prêté ni en panne — ce qui affichait
+  // la carte en noir ("indisponible") sans aucune explication visible, et sans plus aucun moyen de
+  // corriger ça dans l'interface. Tant que le véhicule n'est pas RÉELLEMENT prêté à un autre centre
+  // (loanedToCenterId), currentCis doit toujours correspondre à cis.
+  if(!v.loanedToCenterId && v.currentCis!==v.cis) v.currentCis=v.cis;
   if(v.loanedToCenterName===undefined) v.loanedToCenterName='';
   if(v.loanedDate===undefined) v.loanedDate='';
   if(v.loanedFrom===undefined) v.loanedFrom=null; // {centerId, centerName, vehicleId} — renseigné sur la COPIE chez le centre emprunteur
@@ -2022,7 +2052,7 @@ function render(){
     }
   }
 }
-const APP_VERSION='1.57.3'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.58.0'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -2137,6 +2167,17 @@ function techCheckAnomalies(v){
     if(!t.sig.route) labels.push('Feux de route');
     if(!t.sig.brouillard) labels.push('Feux de brouillard');
     if(!t.sig.stop) labels.push('Feux STOP');
+    if(!t.sig.feuAVG) labels.push('Feu avant gauche');
+    if(!t.sig.feuAVD) labels.push('Feu avant droit');
+    if(!t.sig.feuARG) labels.push('Feu arrière gauche');
+    if(!t.sig.feuARD) labels.push('Feu arrière droit');
+    if(!t.sig.clignotantAVG) labels.push('Clignotant avant gauche');
+    if(!t.sig.clignotantAVD) labels.push('Clignotant avant droit');
+    if(!t.sig.clignotantARG) labels.push('Clignotant arrière gauche');
+    if(!t.sig.clignotantARD) labels.push('Clignotant arrière droit');
+    if(!t.sig.interieur) labels.push('Éclairage intérieur');
+    if(!t.sig.plaque) labels.push('Éclairage de plaque');
+    if(v.hasGabarit!==false && !t.sig.gabarit) labels.push('Feux de gabarit');
   }
   const today=todayStr();
   if(t.carburant<(v.fuelMinThreshold!==undefined?v.fuelMinThreshold:75)) labels.push('Carburant bas ('+t.carburant+'%)');
@@ -2711,6 +2752,7 @@ function renderDashboard(){
         <div class="code">${escapeHtml(v.cis||'—')}${v.immat?' · '+escapeHtml(v.immat):''}</div>
         ${v.loanedToCenterId?`<div class="meta"><span class="tag" style="background:var(--steel);color:#fff;">🏢 Prêté à ${escapeHtml(v.loanedToCenterName)} — lecture seule ici</span></div>`:''}
         ${v.loanedFrom?`<div class="meta"><span class="tag" style="background:#2c6fa8;color:#fff;">📥 Prêté par ${escapeHtml(v.loanedFrom.centerName)}</span></div>`:''}
+        ${(!v.outOfService && !v.loanedToCenterId && v.currentCis && v.currentCis!==v.cis)?`<div class="meta"><span class="tag" style="background:#555;color:#fff;">⚠ Géré par ${escapeHtml(v.currentCis)} — pas prêté ni en panne, à vérifier</span></div>`:''}
         ${isVehicleReadOnlyForMe(v)?`<div class="alert-line" style="color:var(--steel);">🔒 Lecture seule (prêté à ${escapeHtml(v.loanedToCenterName||v.currentCis)})</div>`:''}
         <div class="gauge-row"><div class="gauge"><div class="fill" style="width:${s.pct}%;background:${s.pending?'var(--muted)':gaugeColor(s.pct)};"></div></div><div class="gauge-pct" style="color:${s.pending?'var(--muted)':gaugeColor(s.pct)};">${s.pending?'à faire':s.pct+'%'}</div></div>
         <div class="meta"><span>${s.total} item(s)</span><span>${s.manquant+s.perime+s.hs} anomalie(s)</span></div>
@@ -5007,6 +5049,7 @@ function openVehicleModal(existing){
     <label style="font-size:12.5px;display:flex;gap:6px;align-items:center;"><input type="checkbox" id="mHasEmulseur" ${existing&&existing.hasEmulseur?'checked':''}> Véhicule équipé d'une cuve émulseur</label>
     <label style="font-size:12.5px;display:flex;gap:6px;align-items:center;"><input type="checkbox" id="mHasAdditif" ${existing&&existing.hasAdditif?'checked':''}> Véhicule équipé d'une cuve additif</label>
     </div>
+    <label style="font-size:12.5px;display:flex;gap:6px;align-items:center;"><input type="checkbox" id="mHasGabarit" ${!existing||existing.hasGabarit!==false?'checked':''}> Véhicule équipé de feux de gabarit (gros porteur)</label>
     <label style="font-size:12.5px;display:flex;gap:6px;align-items:center;"><input type="checkbox" id="mAmsec" ${existing&&existing.amsec?'checked':''}> Véhicule AMSEC</label>
     <div class="modal-actions"><button class="btn ghost" id="mCancel">Annuler</button><button class="btn primary" id="mSave">Enregistrer</button></div></div>`;
   document.body.appendChild(overlay);
@@ -5048,6 +5091,7 @@ function openVehicleModal(existing){
     const hasEmulseur=document.getElementById('mHasEmulseur').checked;
     const hasAdditif=document.getElementById('mHasAdditif').checked;
     const hasEngine=document.getElementById('mHasEngine').checked;
+    const hasGabarit=document.getElementById('mHasGabarit').checked;
     if(existing){
       existing.name=name;existing.cis=cis;existing.immat=immat;existing.invNumber=inv;existing.amsec=amsec;
       existing.checkFrequency=freq;existing.checkWeekday=weekday;
@@ -5055,14 +5099,14 @@ function openVehicleModal(existing){
       existing.techCheckFrequency=techFreq;existing.techCheckWeekday=techWeekday;
       existing.techCheckMonthlyOccurrence=techOcc;existing.techCheckMonthlyWeekday=techMonthlyWeekday;
       existing.fuelMinThreshold=fuelMin;existing.adblueMinThreshold=adblueMin;existing.hasAdblue=hasAdblue;existing.hasEngine=hasEngine;
-      existing.hasWaterTank=hasWaterTank;existing.hasEmulseur=hasEmulseur;existing.hasAdditif=hasAdditif;
+      existing.hasWaterTank=hasWaterTank;existing.hasEmulseur=hasEmulseur;existing.hasAdditif=hasAdditif;existing.hasGabarit=hasGabarit;
       existing.waterMinThreshold=waterMin;existing.emulseurMinThreshold=emulMin;existing.additifMinThreshold=addMin;
     }
     else{state.vehicles.push({id:uid('v'),name,cis,immat,invNumber:inv,amsec,checkFrequency:freq,checkWeekday:weekday,
       checkMonthlyOccurrence:monthlyOcc,checkMonthlyWeekday:monthlyWeekday,
       techCheckFrequency:techFreq,techCheckWeekday:techWeekday,techCheckMonthlyOccurrence:techOcc,techCheckMonthlyWeekday:techMonthlyWeekday,
       fuelMinThreshold:fuelMin,adblueMinThreshold:adblueMin,hasAdblue:hasAdblue,hasEngine:hasEngine,
-      hasWaterTank:hasWaterTank,hasEmulseur:hasEmulseur,hasAdditif:hasAdditif,
+      hasWaterTank:hasWaterTank,hasEmulseur:hasEmulseur,hasAdditif:hasAdditif,hasGabarit:hasGabarit,
       waterMinThreshold:waterMin,emulseurMinThreshold:emulMin,additifMinThreshold:addMin,
       checkHistory:[],techCheck:defaultTechCheck(),emplacements:[]});}
     await saveState(); overlay.remove(); render();
@@ -5138,6 +5182,77 @@ function openMoveSubModal(v,empId,artId,subId){
     targetArt.isContainer=true;
     overlay.remove(); render(); saveState();
   });
+}
+/* ---------- Conversion article <-> sous-article (changer de NIVEAU, pas juste d'emplacement/parent) ---------- */
+function openConvertArticleToSubModal(v,empId,artId){
+  const vehicleId=v.id;
+  const{a}=findArt(v,empId+':'+artId);
+  const targets=[];
+  v.emplacements.forEach(e=>e.articles.forEach(art=>{ if(art.id!==artId) targets.push({empName:e.name,art}); }));
+  if(!targets.length){ alert('Il n\'y a aucun autre article sur ce véhicule pour l\'accueillir.'); return; }
+  const overlay=document.createElement('div'); overlay.className='overlay';
+  overlay.innerHTML=`<div class="modal"><h3>⬇ Transformer « ${escapeHtml(a.name)} » en sous-article</h3>
+    <p style="font-size:12.5px;color:var(--muted);">Choisis l'article qui le contiendra (peut être dans un autre emplacement). S'il a lui-même des sous-articles, ils le suivent (ils deviennent des sous-sous-articles).</p>
+    <div class="field"><label>Nouvel article parent</label><select id="convArtTarget">${targets.map(t=>`<option value="${t.art.id}">${escapeHtml(t.empName)} — ${escapeHtml(t.art.name)}</option>`).join('')}</select></div>
+    <div class="modal-actions"><button class="btn ghost" id="convArtCancel">Annuler</button><button class="btn primary" id="convArtConfirm">Transformer</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  document.getElementById('convArtCancel').addEventListener('click',()=>overlay.remove());
+  document.getElementById('convArtConfirm').addEventListener('click',async()=>{
+    const targetArtId=document.getElementById('convArtTarget').value;
+    const liveV=state.vehicles.find(x=>x.id===vehicleId);
+    if(!liveV){ alert('Ce véhicule n\'existe plus — annulé.'); overlay.remove(); return; }
+    const liveEmp=liveV.emplacements.find(e=>e.id===empId);
+    const liveA=liveEmp && liveEmp.articles.find(x=>x.id===artId);
+    let targetArt=null;
+    liveV.emplacements.forEach(e=>e.articles.forEach(art=>{ if(art.id===targetArtId) targetArt=art; }));
+    if(!liveEmp || !liveA || !targetArt){ alert('L\'article ou la cible a changé entre-temps — annulé, réessaie.'); overlay.remove(); render(); return; }
+    const sub={id:liveA.id,name:liveA.name,qty:liveA.qty,lot:liveA.lot||'',invNum:liveA.invNum||'',expiry:liveA.expiry||'',
+      regType:liveA.regType||'',regDueDate:liveA.regDueDate||'',status:liveA.status||'verifier',lastCheck:liveA.lastCheck||'',
+      checkedBy:liveA.checkedBy||'',comments:liveA.comments||[],qtyMissing:liveA.qtyMissing||0,
+      volumeL:liveA.volumeL||'',pressureBar:liveA.pressureBar||'',pressureLocked:liveA.pressureLocked||false,
+      nominalPressure:liveA.nominalPressure||'',wrongLocation:false,sousArticles:liveA.sousArticles||[]};
+    liveEmp.articles=liveEmp.articles.filter(x=>x.id!==artId);
+    targetArt.sousArticles=targetArt.sousArticles||[];
+    targetArt.sousArticles.push(sub);
+    targetArt.isContainer=true;
+    ensureVehicleShape(liveV);
+    overlay.remove(); render(); saveState();
+  });
+}
+function convertSubToArticle(v,empId,artId,subId){
+  if(!confirm('Transformer ce sous-article en article indépendant de cet emplacement ?')) return;
+  const liveV=state.vehicles.find(x=>x.id===v.id); if(!liveV)return;
+  const liveEmp=liveV.emplacements.find(e=>e.id===empId); if(!liveEmp)return;
+  const liveA=liveEmp.articles.find(x=>x.id===artId); if(!liveA)return;
+  const sub=(liveA.sousArticles||[]).find(s=>s.id===subId); if(!sub)return;
+  liveA.sousArticles=liveA.sousArticles.filter(s=>s.id!==subId);
+  liveA.isContainer=liveA.sousArticles.length>0;
+  const art={id:sub.id,name:sub.name,qty:sub.qty,lot:sub.lot||'',invNum:sub.invNum||'',expiry:sub.expiry||'',
+    locked:false,lockLabel:'Tiroir complet',regType:sub.regType||'',regDueDate:sub.regDueDate||'',
+    status:sub.status||'verifier',lastCheck:sub.lastCheck||'',checkedBy:sub.checkedBy||'',comments:sub.comments||[],
+    qtyMissing:sub.qtyMissing||0,photos:[],volumeL:sub.volumeL||'',pressureBar:sub.pressureBar||'',
+    pressureLocked:sub.pressureLocked||false,nominalPressure:sub.nominalPressure||'',
+    isContainer:!!(sub.sousArticles&&sub.sousArticles.length),sousArticles:sub.sousArticles||[],
+    dailyCheck:false,wrongLocation:false};
+  liveEmp.articles.push(art);
+  ensureVehicleShape(liveV);
+  render(); saveState();
+}
+function convertSubsubToSub(v,empId,artId,subId,ssId){
+  if(!confirm('Faire remonter ce sous-sous-article au niveau sous-article (sous le même article) ?')) return;
+  const liveV=state.vehicles.find(x=>x.id===v.id); if(!liveV)return;
+  const liveEmp=liveV.emplacements.find(e=>e.id===empId); if(!liveEmp)return;
+  const liveA=liveEmp.articles.find(x=>x.id===artId); if(!liveA)return;
+  const sub=(liveA.sousArticles||[]).find(s=>s.id===subId); if(!sub)return;
+  const ss=(sub.sousArticles||[]).find(x=>x.id===ssId); if(!ss)return;
+  sub.sousArticles=sub.sousArticles.filter(x=>x.id!==ssId);
+  sub.isContainer=sub.sousArticles.length>0;
+  liveA.sousArticles=liveA.sousArticles||[];
+  liveA.sousArticles.push({id:ss.id,name:ss.name,qty:ss.qty,lot:'',invNum:ss.invNum||'',expiry:ss.expiry||'',status:'verifier',lastCheck:'',checkedBy:'',comments:[],qtyMissing:0});
+  liveA.isContainer=true;
+  ensureVehicleShape(liveV);
+  render(); saveState();
 }
 function renderConfig(vehicleId){
   const v=state.vehicles.find(x=>x.id===vehicleId); if(!v){currentView={type:'dashboard'};return render();}
@@ -5217,6 +5332,7 @@ function renderConfig(vehicleId){
         </div>
         <div class="qty-col"></div>
         <button class="icon-btn" title="Déplacer vers un autre emplacement" data-art-move="${emp.id}:${a.id}">↔</button>
+        <button class="icon-btn" title="Transformer en sous-article d'un autre article" data-art-to-sub="${emp.id}:${a.id}">⬇</button>
         <button class="icon-btn" title="Dupliquer" data-art-dup="${emp.id}:${a.id}">⧉</button>
         <button class="del-btn" data-art-del="${emp.id}:${a.id}">✕</button>
       </div>`;
@@ -5228,7 +5344,7 @@ function renderConfig(vehicleId){
             <div style="display:flex;align-items:center;gap:4px;flex:1;min-width:200px;">
               <div class="reorder-col" style="display:inline-flex;flex-direction:row;gap:2px;"><button data-sub-up="${emp.id}:${a.id}:${s.id}" ${si===0?'disabled':''}>◀</button><button data-sub-down="${emp.id}:${a.id}:${s.id}" ${si===a.sousArticles.length-1?'disabled':''}>▶</button></div>
               <input value="${escapeHtml(s.name)}" style="font-size:12.5px;border:1px solid transparent;background:transparent;padding:2px 4px;flex:1;min-width:100px;" data-set-sub-name="${emp.id}:${a.id}:${s.id}" onfocus="this.style.border='1px solid var(--line)';this.style.background='#fff';">
-              <span class="article-sub">(qté ${s.qty})</span>
+              <label style="font-size:11px;color:var(--muted);">Qté</label><input type="number" min="0" value="${s.qty}" style="width:48px;font-size:12.5px;" data-set-sub-qty="${emp.id}:${a.id}:${s.id}">
               <button class="btn small ghost" title="Copier vers la réserve" data-copy-sub-to-reserve="${emp.id}:${a.id}:${s.id}">📥</button>
             </div>
             <select style="font-size:11.5px;" data-set-sub-regtype="${emp.id}:${a.id}:${s.id}" title="Suivi réglementaire">${Object.keys(REG_TYPES).map(k=>`<option value="${k}" ${s.regType===k?'selected':''}>${REG_TYPES[k]}</option>`).join('')}</select>
@@ -5244,12 +5360,14 @@ function renderConfig(vehicleId){
             </div>`}
             <div class="field-inline" style="margin:0;"><label>Péremption</label><input type="date" value="${s.expiry||''}" style="width:130px;" data-set-sub-expiry="${emp.id}:${a.id}:${s.id}"></div>
             <button class="icon-btn" title="Déplacer vers un autre article" data-sub-move="${emp.id}:${a.id}:${s.id}">↔</button>
+            <button class="icon-btn" title="Transformer en article indépendant de cet emplacement" data-sub-to-art="${emp.id}:${a.id}:${s.id}">⬆</button>
             <button class="del-btn" data-sub-del="${emp.id}:${a.id}:${s.id}">✕</button>
           </div>
           <div class="sub-sub-list" style="margin-left:28px;border-left:2px dashed var(--line);padding-left:10px;">
             ${(s.sousArticles||[]).map(ss=>`<div class="sub-row" data-subsub="${ss.id}" style="font-size:12px;">
               <input value="${escapeHtml(ss.name)}" style="font-size:12px;border:1px solid transparent;background:transparent;padding:2px 4px;flex:1;min-width:100px;" data-set-subsub-name="${emp.id}:${a.id}:${s.id}:${ss.id}" onfocus="this.style.border='1px solid var(--line)';this.style.background='#fff';">
-              <span class="article-sub">(qté ${ss.qty})</span>
+              <label style="font-size:10.5px;color:var(--muted);">Qté</label><input type="number" min="0" value="${ss.qty}" style="width:44px;font-size:12px;" data-set-subsub-qty="${emp.id}:${a.id}:${s.id}:${ss.id}">
+              <button class="icon-btn" title="Faire remonter au niveau sous-article" data-subsub-to-sub="${emp.id}:${a.id}:${s.id}:${ss.id}">⬆</button>
               <button class="del-btn" data-subsub-del="${emp.id}:${a.id}:${s.id}:${ss.id}">✕</button>
             </div>`).join('')}
             <div class="add-row"><input placeholder="Nom sous-sous-article (ex: sacoche)" id="newSubSubName_${s.id}" style="font-size:12px;"><input type="number" placeholder="Qté" value="1" style="width:55px;font-size:12px;" id="newSubSubQty_${s.id}"><button class="btn small ghost" data-add-subsub="${emp.id}:${a.id}:${s.id}">➕</button></div>
@@ -5393,6 +5511,9 @@ function bindConfigEvents(v){
   app.querySelectorAll('[data-art-move]').forEach(el=>el.addEventListener('click',()=>{
     const[empId,artId]=el.dataset.artMove.split(':'); openMoveArticleModal(v,empId,artId);
   }));
+  app.querySelectorAll('[data-art-to-sub]').forEach(el=>el.addEventListener('click',()=>{
+    const[empId,artId]=el.dataset.artToSub.split(':'); openConvertArticleToSubModal(v,empId,artId);
+  }));
   app.querySelectorAll('[data-art-dup]').forEach(el=>el.addEventListener('click',async()=>{
     const[empId,artId]=el.dataset.artDup.split(':'); const emp=v.emplacements.find(e=>e.id===empId);
     const orig=emp.articles.find(a=>a.id===artId); if(!orig)return;
@@ -5490,6 +5611,9 @@ function bindConfigEvents(v){
   app.querySelectorAll('[data-sub-move]').forEach(el=>el.addEventListener('click',()=>{
     const[empId,artId,subId]=el.dataset.subMove.split(':'); openMoveSubModal(v,empId,artId,subId);
   }));
+  app.querySelectorAll('[data-sub-to-art]').forEach(el=>el.addEventListener('click',()=>{
+    const[empId,artId,subId]=el.dataset.subToArt.split(':'); convertSubToArticle(v,empId,artId,subId);
+  }));
   app.querySelectorAll('[data-sub-del]').forEach(el=>el.addEventListener('click',async()=>{
     const[empId,artId,subId]=el.dataset.subDel.split(':'); const{a}=findArt(v,empId+':'+artId);
     a.sousArticles=a.sousArticles.filter(s=>s.id!==subId); render(); saveState();
@@ -5510,11 +5634,20 @@ function bindConfigEvents(v){
     sub.isContainer=sub.sousArticles.length>0;
     render(); saveState();
   }));
+  app.querySelectorAll('[data-subsub-to-sub]').forEach(el=>el.addEventListener('click',()=>{
+    const[empId,artId,subId,ssId]=el.dataset.subsubToSub.split(':'); convertSubsubToSub(v,empId,artId,subId,ssId);
+  }));
   app.querySelectorAll('[data-set-subsub-name]').forEach(el=>el.addEventListener('change',async()=>{
     const[empId,artId,subId,ssId]=el.dataset.setSubsubName.split(':'); const{a}=findArt(v,empId+':'+artId);
     const sub=a.sousArticles.find(s=>s.id===subId); if(!sub)return;
     const ss=(sub.sousArticles||[]).find(x=>x.id===ssId); if(!ss)return;
     const n=el.value.trim(); if(!n)return; ss.name=n; saveState();
+  }));
+  app.querySelectorAll('[data-set-subsub-qty]').forEach(el=>el.addEventListener('change',async()=>{
+    const[empId,artId,subId,ssId]=el.dataset.setSubsubQty.split(':'); const{a}=findArt(v,empId+':'+artId);
+    const sub=a.sousArticles.find(s=>s.id===subId); if(!sub)return;
+    const ss=(sub.sousArticles||[]).find(x=>x.id===ssId); if(!ss)return;
+    ss.qty=Math.max(0,parseInt(el.value)||0); render(); saveState();
   }));
   app.querySelectorAll('[data-set-sub-expiry]').forEach(el=>el.addEventListener('change',async()=>{
     const[empId,artId,subId]=el.dataset.setSubExpiry.split(':'); const{a}=findArt(v,empId+':'+artId);
@@ -5537,6 +5670,11 @@ function bindConfigEvents(v){
   app.querySelectorAll('[data-set-sub-name]').forEach(el=>el.addEventListener('change',async()=>{
     const[empId,artId,subId]=el.dataset.setSubName.split(':'); const{a}=findArt(v,empId+':'+artId);
     const sub=a.sousArticles.find(s=>s.id===subId); const n=el.value.trim(); if(!n)return; sub.name=n; render(); saveState();
+  }));
+  app.querySelectorAll('[data-set-sub-qty]').forEach(el=>el.addEventListener('change',async()=>{
+    const[empId,artId,subId]=el.dataset.setSubQty.split(':'); const{a}=findArt(v,empId+':'+artId);
+    const sub=a.sousArticles.find(s=>s.id===subId); if(!sub)return;
+    sub.qty=Math.max(0,parseInt(el.value)||0); render(); saveState();
   }));
   app.querySelectorAll('[data-set-sub-regtype]').forEach(el=>el.addEventListener('change',async()=>{
     const[empId,artId,subId]=el.dataset.setSubRegtype.split(':'); const{a}=findArt(v,empId+':'+artId);
@@ -5752,7 +5890,20 @@ function maybeCollapseFinishedEmp(v,empId){
   });
   if(allDone && checkOpenEmps.has(empId)){
     checkOpenEmps.delete(empId);
+    // L'emplacement qui vient de se replier raccourcit la page ; comme render() restaure l'ancienne
+    // position de défilement EN PIXELS, celle-ci peut alors pointer bien plus bas que la page ne l'est
+    // désormais — le navigateur la ramène alors au maximum possible, c'est-à-dire tout en bas. On repère
+    // donc, AVANT le repli, le prochain emplacement encore à faire, et on y amène l'écran explicitement
+    // une fois le ré-affichage terminé, pour enchaîner directement sur la suite plutôt que de "tomber"
+    // en bas de l'inventaire.
+    const idx=v.emplacements.findIndex(e=>e.id===empId);
+    const nextEmp=v.emplacements.slice(idx+1).find(e=>checkOpenEmps.has(e.id))
+      || v.emplacements.find(e=>checkOpenEmps.has(e.id));
     render();
+    if(nextEmp){
+      const el=document.querySelector(`[data-emp="${nextEmp.id}"]`);
+      if(el) el.scrollIntoView({block:'start',behavior:'smooth'});
+    }
   }
 }
 function maybeOfferClosure(v){
@@ -6410,6 +6561,32 @@ function renderTech(vehicleId){
     </div>
   </div>
 
+  <div class="tech-block"><h4>Feux avant / arrière — gauche / droite</h4>
+    <div class="tech-check-list">
+      <label class="tech-check-item"><input type="checkbox" id="tFeuAVG" ${t.sig.feuAVG?'checked':''}> Feu avant gauche</label>
+      <label class="tech-check-item"><input type="checkbox" id="tFeuAVD" ${t.sig.feuAVD?'checked':''}> Feu avant droit</label>
+      <label class="tech-check-item"><input type="checkbox" id="tFeuARG" ${t.sig.feuARG?'checked':''}> Feu arrière gauche</label>
+      <label class="tech-check-item"><input type="checkbox" id="tFeuARD" ${t.sig.feuARD?'checked':''}> Feu arrière droit</label>
+    </div>
+  </div>
+
+  <div class="tech-block"><h4>Clignotants avant / arrière — gauche / droite</h4>
+    <div class="tech-check-list">
+      <label class="tech-check-item"><input type="checkbox" id="tClignAVG" ${t.sig.clignotantAVG?'checked':''}> Clignotant avant gauche</label>
+      <label class="tech-check-item"><input type="checkbox" id="tClignAVD" ${t.sig.clignotantAVD?'checked':''}> Clignotant avant droit</label>
+      <label class="tech-check-item"><input type="checkbox" id="tClignARG" ${t.sig.clignotantARG?'checked':''}> Clignotant arrière gauche</label>
+      <label class="tech-check-item"><input type="checkbox" id="tClignARD" ${t.sig.clignotantARD?'checked':''}> Clignotant arrière droit</label>
+    </div>
+  </div>
+
+  <div class="tech-block"><h4>Autres éclairages</h4>
+    <div class="tech-check-list">
+      <label class="tech-check-item"><input type="checkbox" id="tSigInt" ${t.sig.interieur?'checked':''}> Éclairage intérieur</label>
+      <label class="tech-check-item"><input type="checkbox" id="tSigPlaque" ${t.sig.plaque?'checked':''}> Éclairage de plaque</label>
+      ${v.hasGabarit!==false?`<label class="tech-check-item"><input type="checkbox" id="tSigGabarit" ${t.sig.gabarit?'checked':''}> Feux de gabarit</label>`:''}
+    </div>
+  </div>
+
   <div class="tech-block"><h4>🚗 État carrosserie</h4>
     <button class="btn small ghost" id="carroReportBtnTech">🚗 Signaler un problème (photo)</button>
     <div style="margin-top:10px;">${renderCarrosseriePhotos(v)}</div>
@@ -6472,7 +6649,11 @@ function renderTech(vehicleId){
       laveGlaceOk:document.getElementById('tLave').checked,adblueOk:tAdbOkEl?tAdbOkEl.checked:true,
       pneuEtat:document.getElementById('tPneu').value,pressionAV:document.getElementById('tPav').value,pressionAR:document.getElementById('tPar').value,
       essuieGlacesOk:document.getElementById('tEssuie').checked,pareBriseOk:document.getElementById('tPare').checked,retroOk:document.getElementById('tRetro').checked,
-      sig:{lumineux:document.getElementById('tSigLum').checked,sonore:document.getElementById('tSigSon').checked,croisement:document.getElementById('tSigCr').checked,route:document.getElementById('tSigRt').checked,brouillard:document.getElementById('tSigBr').checked,stop:document.getElementById('tSigSt').checked},
+      sig:{lumineux:document.getElementById('tSigLum').checked,sonore:document.getElementById('tSigSon').checked,croisement:document.getElementById('tSigCr').checked,route:document.getElementById('tSigRt').checked,brouillard:document.getElementById('tSigBr').checked,stop:document.getElementById('tSigSt').checked,
+        feuAVG:document.getElementById('tFeuAVG').checked,feuAVD:document.getElementById('tFeuAVD').checked,feuARG:document.getElementById('tFeuARG').checked,feuARD:document.getElementById('tFeuARD').checked,
+        clignotantAVG:document.getElementById('tClignAVG').checked,clignotantAVD:document.getElementById('tClignAVD').checked,clignotantARG:document.getElementById('tClignARG').checked,clignotantARD:document.getElementById('tClignARD').checked,
+        interieur:document.getElementById('tSigInt').checked,plaque:document.getElementById('tSigPlaque').checked,
+        gabarit:v.hasGabarit!==false?document.getElementById('tSigGabarit').checked:(v.techCheck.sig?v.techCheck.sig.gabarit:true)},
       commentaire:document.getElementById('tComment').value,photos:t.photos||[],
       verifiedBy:currentCheckerLabel(),lastCheck:todayStr(),
       quickReadingsHistory:t.quickReadingsHistory||[]
@@ -6556,13 +6737,16 @@ async function startVoiceInventoryReal(v){
   const overlay=document.createElement('div'); overlay.className='voice-overlay'; overlay.id='voiceOverlay';
   overlay.innerHTML=`<button class="voice-close" id="voiceClose">✕</button>
     <div class="vname">${escapeHtml(v.name)} — Inventaire vocal</div>
-    <div class="voice-mic" id="voiceMic">🎤</div>
+    <div class="voice-mic" id="voiceMic" title="Touche pour réactiver le micro">🎤</div>
     <div class="vitem" id="voiceItemText">Préparation…</div>
     <div class="vhint" id="voiceHint">Réponses possibles : Oui (conforme) · Manquant · Périmé · H.S.</div>
     <div class="voice-progress" id="voiceProgress"></div>
-    ${startIndex>0?'<button class="btn ghost small" id="voiceRestartBtn" style="margin-top:14px;">🔁 Recommencer depuis le début</button>':''}`;
+    <button class="btn primary small" id="voiceReactivateBtn" style="margin-top:14px;">🎤 Réactiver le micro</button>
+    ${startIndex>0?'<button class="btn ghost small" id="voiceRestartBtn" style="margin-top:8px;">🔁 Recommencer depuis le début</button>':''}`;
   document.body.appendChild(overlay);
   document.getElementById('voiceClose').addEventListener('click',stopVoiceInventory);
+  document.getElementById('voiceReactivateBtn').addEventListener('click',voiceReactivate);
+  document.getElementById('voiceMic').addEventListener('click',voiceReactivate);
   const rb=document.getElementById('voiceRestartBtn');
   if(rb)rb.addEventListener('click',()=>{voiceState.index=0;voiceResumeMap[v.id]=0;rb.remove();voiceAskCurrentItem();});
   voiceAskCurrentItem();
@@ -6644,7 +6828,12 @@ function listenOnce(onResult){
   const finish=(val)=>{ if(settled)return; settled=true; if(mic)mic.classList.remove('listening'); onResult(val); };
   rec.onresult=(e)=>{const txt=e.results[0][0].transcript.toLowerCase().trim(); finish(txt);};
   rec.onerror=()=>{ finish(''); };
-  rec.onend=()=>{ if(mic)mic.classList.remove('listening'); };
+  // Avant, "onend" ne faisait que retirer l'animation du micro sans jamais appeler "finish" si ni
+  // "onresult" ni "onerror" ne s'étaient déclenchés avant lui (ça arrive, selon le navigateur, en cas de
+  // silence prolongé ou de coupure réseau) — le mode vocal restait alors bloqué indéfiniment sur le même
+  // item, sans message d'erreur et sans rien demander, ce qui ressemblait à un mode vocal qui "s'arrête".
+  // On s'assure maintenant que la séquence continue TOUJOURS, quoi qu'il arrive.
+  rec.onend=()=>{ if(mic)mic.classList.remove('listening'); finish(''); };
   const tryStart=(retried)=>{
     try{ rec.start(); }
     catch(err){
@@ -6655,7 +6844,18 @@ function listenOnce(onResult){
     }
   };
   tryStart(false);
-}function voiceAskCurrentItem(){
+}
+// Bouton de secours, toujours visible dans l'overlay vocal : si le micro semble bloqué (plus de réaction
+// après avoir parlé), l'agent peut relancer l'écoute sur l'item en cours sans fermer le mode vocal ni
+// perdre sa progression — pas besoin de sortir et de rouvrir.
+function voiceReactivate(){
+  if(!voiceState)return;
+  try{ voiceState.recognition.abort(); }catch(e){}
+  speechSynthesis.cancel();
+  resetVoiceRecognition();
+  voiceAskCurrentItem();
+}
+function voiceAskCurrentItem(){
   if(!voiceState)return;
   const{queue,index}=voiceState;
   if(index>=queue.length){
