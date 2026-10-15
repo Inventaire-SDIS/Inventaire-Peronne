@@ -994,6 +994,34 @@ function userIsTyping(){
 // périmée et la modification faite dans la modale peut se perdre silencieusement, ou s'appliquer à un
 // objet fantôme déconnecté du nouvel état. On évite donc de remplacer l'état tant qu'une modale est
 // ouverte — exactement comme on évite déjà de reconstruire l'écran sous les doigts de quelqu'un qui tape.
+// Met à jour `cur` SUR PLACE pour qu'il devienne identique à `next`, en conservant l'identité des objets
+// existants (appariés par id dans les tableaux). Ainsi, une fenêtre ouverte qui retient une référence à un
+// véhicule / emplacement / article reste branchée sur l'état vivant quand une sauvegarde ou une fusion en
+// arrière-plan met l'état à jour (avant : l'état entier était remplacé et la référence devenait fantôme).
+function reconcileInPlace(cur,next){
+  if(cur===next) return cur;
+  const isObj=x=>x!==null && typeof x==='object' && !Array.isArray(x);
+  if(Array.isArray(cur) && Array.isArray(next)){
+    const byId=new Map();
+    cur.forEach(x=>{ if(isObj(x) && x.id!==undefined && !byId.has(x.id)) byId.set(x.id,x); });
+    const out=next.map(n=>{
+      if(isObj(n) && n.id!==undefined && byId.has(n.id)){ const c=byId.get(n.id); byId.delete(n.id); return reconcileInPlace(c,n); }
+      return n;
+    });
+    cur.length=0; out.forEach(o=>cur.push(o));
+    return cur;
+  }
+  if(isObj(cur) && isObj(next)){
+    Object.keys(cur).forEach(k=>{ if(!(k in next)) delete cur[k]; });
+    Object.keys(next).forEach(k=>{
+      const c=cur[k], n=next[k];
+      if((isObj(c)&&isObj(n)) || (Array.isArray(c)&&Array.isArray(n))) cur[k]=reconcileInPlace(c,n);
+      else cur[k]=n;
+    });
+    return cur;
+  }
+  return next;
+}
 function anyModalOpen(){ return !!document.querySelector('.overlay'); }
 async function checkAndApplyScheduledResets(isInitialLoad){
   // Remise à zéro automatique (quotidienne à 8h, hebdomadaire/mensuelle selon la fréquence). Appelée au
@@ -1047,7 +1075,7 @@ async function checkAndApplyScheduledResets(isInitialLoad){
     const before=JSON.stringify(state);
     const remoteObj=normalizeStateObject(JSON.parse(remoteValue));
     const newBaseline=JSON.parse(JSON.stringify(remoteObj));
-    state=mergeStateForSave(remoteObj);   // modifs locales non envoyées conservées, le reste vient du serveur
+    state=reconcileInPlace(state,mergeStateForSave(remoteObj));   // modifs locales non envoyées conservées, le reste vient du serveur
     lastSyncedState=newBaseline;
     normalizeStateObject(state);
     updateSuspiciousMergeBanner();
@@ -1599,7 +1627,7 @@ async function doActualSave(){
       const finalObj=JSON.parse(finalValue);
       const newBaseline=JSON.parse(finalValue);
       lastSyncedState=savedSnapshot||newBaseline;
-      state=mergeStateForSave(finalObj);
+      state=reconcileInPlace(state,mergeStateForSave(finalObj));
       lastSyncedState=newBaseline;
     } else {
       // Stockage sans transaction disponible (ex: mode sans Firebase) : fusion manuelle lecture-écriture.
@@ -1607,7 +1635,7 @@ async function doActualSave(){
         const fresh=await window.storage.get(STORAGE_KEY,true,true);
         if(fresh && fresh.value){
           const remoteState=JSON.parse(fresh.value);
-          if(remoteState) state=mergeStateForSave(remoteState);
+          if(remoteState) state=reconcileInPlace(state,mergeStateForSave(remoteState));
         }
       }catch(e){ console.error('Fusion avant sauvegarde impossible, on sauvegarde quand même la copie locale :',e); }
       await window.storage.set(STORAGE_KEY,JSON.stringify(state),true);
@@ -2052,7 +2080,7 @@ function render(){
     }
   }
 }
-const APP_VERSION='1.58.0'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.58.2'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -3252,7 +3280,10 @@ function renderReserve(cat,search,sort){
     })));
     app.querySelectorAll('[data-send-repair]').forEach(el=>el.addEventListener('click',()=>{
       const it=allItems.find(x=>x.id===el.dataset.sendRepair); if(!it)return;
+      const itemId=it.id;
       openSendToRepairModal(it.name,async(info)=>{
+        const it=(state.reserves[cat]||[]).find(x=>x.id===itemId);
+        if(!it){ alert('Cet élément a changé entre-temps — envoi annulé, réessaie.'); render(); return; }
         state.repairs.push({id:uid('rep'),itemLabel:it.name,numero:it.numero||'',sourceType:'reserve',sourceLabel:RESERVE_CATS[cat].label,cat,reserveItemId:it.id,destination:info.destination,motif:info.motif,dateEnvoi:info.date,dateRetour:'',returned:false});
         it.location='reparation';
         if(it.trackMode!=='unique'&&!isBottleCat) it.qty=Math.max(0,(it.qty||0)-1); else it.qty=0;
@@ -6313,20 +6344,36 @@ function renderCheck(vehicleId){
   app.querySelectorAll('[data-pick-reserve-sub]').forEach(el=>el.addEventListener('click',()=>{
     const[empId,artId,subId]=el.dataset.pickReserveSub.split(':'); openReservePicker(v,empId,artId,subId);
   }));
+  // IMPORTANT : la fenêtre "Envoyer en réparation" reste ouverte le temps de saisir le motif. Pendant ce
+  // temps, la sauvegarde du ENVOI PRÉCÉDENT (6 s après) remplace l'état global par de nouveaux objets :
+  // l'article capturé au clic devenait alors un objet fantôme, et le commentaire/l'envoi du 2e élément
+  // se perdait (d'où "il faut recharger la page à chaque bouteille"). On ne retient donc que les
+  // identifiants, et on RE-RÉSOUT véhicule/emplacement/article depuis l'état COURANT à la validation.
   app.querySelectorAll('[data-send-repair-art]').forEach(el=>el.addEventListener('click',()=>{
-    const[empId,artId]=el.dataset.sendRepairArt.split(':'); const{a,emp}=findArt(v,empId+':'+artId);
+    const[empId,artId]=el.dataset.sendRepairArt.split(':'); const{a}=findArt(v,empId+':'+artId);
+    const vehicleId=v.id;
     openSendToRepairModal(a.name,async(info)=>{
-      state.repairs.push({id:uid('rep'),itemLabel:a.name,numero:a.invNum||'',sourceType:'vehicule',sourceLabel:v.name+' — '+emp.name,destination:info.destination,motif:info.motif,dateEnvoi:info.date,dateRetour:'',returned:false});
-      addComment(a,'Envoyé en réparation ('+info.destination+') le '+fmtDate(info.date));
+      const lv=state.vehicles.find(x=>x.id===vehicleId);
+      const lemp=lv&&lv.emplacements.find(e=>e.id===empId);
+      const la=lemp&&lemp.articles.find(x=>x.id===artId);
+      if(!la){ alert('Cet article a changé entre-temps — envoi annulé, réessaie.'); render(); return; }
+      state.repairs.push({id:uid('rep'),itemLabel:la.name,numero:la.invNum||'',sourceType:'vehicule',sourceLabel:lv.name+' — '+lemp.name,destination:info.destination,motif:info.motif,dateEnvoi:info.date,dateRetour:'',returned:false});
+      addComment(la,'Envoyé en réparation ('+info.destination+') le '+fmtDate(info.date));
       render(); saveState();
     });
   }));
   app.querySelectorAll('[data-send-repair-sub]').forEach(el=>el.addEventListener('click',()=>{
-    const[empId,artId,subId]=el.dataset.sendRepairSub.split(':'); const{a,emp}=findArt(v,empId+':'+artId);
-    const sub=a.sousArticles.find(s=>s.id===subId);
+    const[empId,artId,subId]=el.dataset.sendRepairSub.split(':'); const{a}=findArt(v,empId+':'+artId);
+    const sub=a.sousArticles.find(s=>s.id===subId); if(!sub) return;
+    const vehicleId=v.id;
     openSendToRepairModal(a.name+' > '+sub.name,async(info)=>{
-      state.repairs.push({id:uid('rep'),itemLabel:a.name+' > '+sub.name,numero:sub.invNum||'',sourceType:'vehicule',sourceLabel:v.name+' — '+emp.name,destination:info.destination,motif:info.motif,dateEnvoi:info.date,dateRetour:'',returned:false});
-      addComment(sub,'Envoyé en réparation ('+info.destination+') le '+fmtDate(info.date));
+      const lv=state.vehicles.find(x=>x.id===vehicleId);
+      const lemp=lv&&lv.emplacements.find(e=>e.id===empId);
+      const la=lemp&&lemp.articles.find(x=>x.id===artId);
+      const lsub=la&&(la.sousArticles||[]).find(s=>s.id===subId);
+      if(!lsub){ alert('Cet article a changé entre-temps — envoi annulé, réessaie.'); render(); return; }
+      state.repairs.push({id:uid('rep'),itemLabel:la.name+' > '+lsub.name,numero:lsub.invNum||'',sourceType:'vehicule',sourceLabel:lv.name+' — '+lemp.name,destination:info.destination,motif:info.motif,dateEnvoi:info.date,dateRetour:'',returned:false});
+      addComment(lsub,'Envoyé en réparation ('+info.destination+') le '+fmtDate(info.date));
       render(); saveState();
     });
   }));
