@@ -1118,6 +1118,7 @@ function ensureReservesShape(){
       if(it.numero===undefined)it.numero='';
       if(it.volumeL===undefined)it.volumeL='';
       if(it.pressureBar===undefined)it.pressureBar='';
+      if(cat==='ari' && !it.nominalPressure){ const pb=parseFloat(it.pressureBar); it.nominalPressure=(pb>=150)?pb:300; }
       if(it.trackMode===undefined)it.trackMode='stock';
       if(it.archived===undefined)it.archived=false;
       if(it.archivedDate===undefined)it.archivedDate='';
@@ -2080,7 +2081,7 @@ function render(){
     }
   }
 }
-const APP_VERSION='1.58.2'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.59.1'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -2762,6 +2763,9 @@ function renderDashboard(){
   if(state.vehicles.length===0){
     html+=`<div class="empty-state">Aucun véhicule.<br><button class="btn primary" id="emptyAddBtn" style="margin-top:10px;">Ajouter un véhicule</button></div>`;
   }else{
+    const vehSorted=[...state.vehicles].sort((a,b)=>(a.order||0)-(b.order||0));
+    html+=collapseHeadHtml('dash-veh','<h2 style="margin:0;font-size:18px;">🚒 Véhicules ('+state.vehicles.length+')</h2>','padding:8px 0;border-bottom:2px solid var(--line);margin-bottom:10px;',
+      '<select id="jumpVehicle" class="chip" style="border-radius:14px;font-size:12px;padding:5px 8px;max-width:55%;"><option value="">Aller à un véhicule…</option>'+vehSorted.map(v=>'<option value="'+v.id+'">'+escapeHtml(v.name)+'</option>').join('')+'</select>');
     html+='<div class="grid">';
     // Trié par le champ d'ordre explicite (v.order), pas par la position brute dans le tableau — cette
     // dernière peut être remaniée par une fusion serveur et ne reflète alors plus l'ordre voulu.
@@ -2793,6 +2797,7 @@ function renderDashboard(){
         ${techCheckAnomalies(v).length?`<div class="alert-line">🔧 ${techCheckAnomalies(v).length} point(s) signalé(s) sur l'engin</div>`:''}
         ${v.hasEngine!==false && (v.techCheck.ctDate||v.techCheck.vidangeDate)?`<div class="meta" style="font-size:11px;">${v.techCheck.ctDate?'<span>📅 CT : '+fmtDate(v.techCheck.ctDate)+'</span>':''}${v.techCheck.vidangeDate?'<span>🛢 Vidange : '+fmtDate(v.techCheck.vidangeDate)+'</span>':''}</div>`:''}
         ${v.emplacements.some(e=>e.articles.some(a=>a.dailyCheck)) && v.checkFrequency!=='quotidien' && !(v.dailyCheckHistory||[]).some(h=>h.date===todayStr()) ? '<div class="alert-line">☀ Contrôle de départ non fait aujourd\'hui</div>' : ''}
+        ${ariRefillCount(v)?`<div class="alert-line">🫁 ${ariRefillCount(v)} bouteille(s) ARI à regonfler (sous 90 % de la pression nominale)</div>`:''}
         ${wrongLocationCount(v)?`<div class="alert-line">📍 ${wrongLocationCount(v)} emplacement(s) signalé(s) comme incorrect(s)</div>`:''}
         ${v.activeChecker&&(Date.now()-v.activeChecker.since<45*60*1000)?`<div class="alert-line" style="color:var(--navy);background:#e8f0fb;padding:4px 6px;border-radius:3px;">👤 Vérification en cours par ${escapeHtml(v.activeChecker.name)} (depuis ${Math.round((Date.now()-v.activeChecker.since)/60000)} min)</div>`:''}
         <div class="card-actions">
@@ -2806,9 +2811,12 @@ function renderDashboard(){
       html+=`
       </div>`;
     });
-    html+='</div>';
+    html+='</div></div>';
   }
-  html+=`<div class="dash-header" style="margin-top:28px;"><div><h2>Réserves</h2><p class="big">Stocks du centre</p></div>${adminAccessible()?'<button class="btn ghost" id="importSeedBtn">📥 Importer le catalogue depuis les inventaires</button>':''}</div><div class="grid">`;
+  html+=`<div class="dash-header" style="margin-top:28px;"><div><h2>Réserves</h2><p class="big">Stocks du centre</p></div>${adminAccessible()?'<button class="btn ghost" id="importSeedBtn">📥 Importer le catalogue depuis les inventaires</button>':''}</div>`;
+  html+=collapseHeadHtml('dash-res','<h2 style="margin:0;font-size:18px;">📦 Réserves ('+Object.keys(RESERVE_CATS).length+')</h2>','padding:8px 0;border-bottom:2px solid var(--line);margin-bottom:10px;',
+    '<select id="jumpReserve" class="chip" style="border-radius:14px;font-size:12px;padding:5px 8px;max-width:55%;"><option value="">Aller à une réserve…</option>'+Object.keys(RESERVE_CATS).map(c=>'<option value="'+c+'">'+RESERVE_CATS[c].icon+' '+escapeHtml(RESERVE_CATS[c].label)+'</option>').join('')+'</select>');
+  html+='<div class="grid">';
   Object.keys(RESERVE_CATS).forEach(cat=>{
     const items=state.reserves[cat]||[];
     const low=items.filter(it=>it.qtyMin>0 && it.qty<it.qtyMin).length;
@@ -2823,8 +2831,12 @@ function renderDashboard(){
       </div>
     </div>`;
   });
-  html+='</div>';
+  html+='</div></div>';
   app.innerHTML=html;
+  const jv=document.getElementById('jumpVehicle');
+  if(jv) jv.addEventListener('change',async()=>{ const vh=state.vehicles.find(x=>x.id===jv.value); if(!vh)return; await maybeRestartOnReopen(vh); currentView={type:'check',vehicleId:vh.id}; render(); });
+  const jr=document.getElementById('jumpReserve');
+  if(jr) jr.addEventListener('change',()=>{ if(!jr.value)return; currentView={type:'reserve',cat:jr.value}; render(); });
   app.querySelectorAll('[data-open],[data-check]').forEach(el=>el.addEventListener('click',async()=>{
     const vid=el.dataset.open||el.dataset.check;
     const vh=state.vehicles.find(x=>x.id===vid);
@@ -3148,8 +3160,8 @@ function renderReserve(cat,search,sort){
       const inRepair = it.location==='reparation';
       return `<div class="article-row" data-item="${it.id}" style="grid-template-columns:${isUnique?'1fr 130px 30px 30px':'1fr 70px 70px 30px 30px'};padding-left:8px;${bottleRowStyle(it)}">
         <div>
-          <div class="article-name">${escapeHtml(it.name)} ${low?'<span class="reg-badge overdue">Sous seuil</span>':''}${isBottleCat&&it.volumeL?` <span class="tag">${escapeHtml(it.volumeL)} L</span>`:''}${isBottleCat&&it.pressureBar?` <span class="tag">${escapeHtml(it.pressureBar)} bar</span>`:''}${isBottleCat&&it.pressureBar!==''&&parseFloat(it.pressureBar)<=0?` <span class="reg-badge overdue">Vide — ${cat==='ari'?'à recharger sur place':'à retourner en pharmacie'}</span>`:''}${it.currentVehicleLabel&&it.qty===0?' <span class="tag" style="background:#2c6fa8;color:#fff;">Sur engin</span>':''}${inRepair?' <span class="reg-badge overdue">🔧 En réparation</span>':''}</div>
-          ${cat==='ari'&&it.pressureBar!==''&&parseFloat(it.pressureBar)<=0?`<div class="field-inline" style="margin-top:6px;"><button class="btn small primary" data-refill-ari="${it.id}">✓ Bouteille rechargée (remettre à 300 bar)</button></div>`:''}
+          <div class="article-name">${escapeHtml(it.name)} ${low?'<span class="reg-badge overdue">Sous seuil</span>':''}${isBottleCat&&it.volumeL?` <span class="tag">${escapeHtml(it.volumeL)} L</span>`:''}${isBottleCat&&it.pressureBar?` <span class="tag">${escapeHtml(it.pressureBar)} bar</span>`:''}${isBottleCat&&it.pressureBar!==''&&parseFloat(it.pressureBar)<=0?` <span class="reg-badge overdue">Vide — ${cat==='ari'?'à recharger sur place':'à retourner en pharmacie'}</span>`:''}${cat==='ari'&&parseFloat(it.pressureBar)>0&&bottleBelowLimit(it.pressureBar,reserveNominal(it))?` <span class="reg-badge overdue">À regonfler (sous ${ariRefillLimit(reserveNominal(it))} bar)</span>`:''}${it.currentVehicleLabel&&it.qty===0?' <span class="tag" style="background:#2c6fa8;color:#fff;">Sur engin</span>':''}${inRepair?' <span class="reg-badge overdue">🔧 En réparation</span>':''}</div>
+          ${cat==='ari'&&it.pressureBar!==''&&(parseFloat(it.pressureBar)<=0||bottleBelowLimit(it.pressureBar,reserveNominal(it)))?`<div class="field-inline" style="margin-top:6px;"><button class="btn small primary" data-refill-ari="${it.id}">✓ Bouteille rechargée (remettre à ${reserveNominal(it)} bar)</button></div>`:''}
           ${cat==='oxygene'?`<div class="field-inline" style="margin-top:6px;"><button class="btn small ${it.pressureBar!==''&&parseFloat(it.pressureBar)<=0?'primary':'ghost'}" data-archive-o2="${it.id}">📤 Renvoyer vers la pharmacie départementale</button></div>`:''}
           ${renderCommentsBlock(it,'r:'+cat+':'+it.id)}
           ${it.currentVehicleLabel&&it.qty===0?`<div class="comment-text" style="background:#e8f0fb;border-color:#b8d0ef;color:var(--navy);"><b>📍 Sur :</b> ${escapeHtml(it.currentVehicleLabel)}</div>`:''}
@@ -3199,6 +3211,7 @@ function renderReserve(cat,search,sort){
     }
     if(!items.length){ h+=`<p style="font-size:12.5px;color:var(--muted);padding:10px 0;">Aucune référence ne correspond à « ${escapeHtml(filterText)} ».</p>`; }
     if(isBottleCat && sort==='location' && !sn){
+      h+=`<div style="display:flex;gap:8px;margin-bottom:6px;"><button class="btn small ghost" data-collapse-all="res:${cat}:|collapse">▸ Tout replier</button><button class="btn small ghost" data-collapse-all="res:${cat}:|expand">▾ Tout déplier</button></div>`;
       // Regroupement par emplacement (stock / chaque véhicule / réparation), puis par contenance et pression nominale à l'intérieur de chaque groupe.
       const byBottleSort=(a,b)=> (parseFloat(a.volumeL)||0)-(parseFloat(b.volumeL)||0) || (parseFloat(a.pressureBar)||0)-(parseFloat(b.pressureBar)||0) || a.name.localeCompare(b.name,'fr');
       const groups={}; const order=[];
@@ -3211,8 +3224,9 @@ function renderReserve(cat,search,sort){
       order.sort((a,b)=> a==='📦 En stock (réserve)'?-1: b==='📦 En stock (réserve)'?1: a==='🔧 En réparation'?1: b==='🔧 En réparation'?-1: a.localeCompare(b,'fr'));
       order.forEach(key=>{
         const grp=groups[key].sort(byBottleSort);
-        h+=`<div style="font-size:11.5px;font-weight:700;color:var(--navy);text-transform:uppercase;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--line);">${key} (${grp.length})</div>`;
+        h+=collapseHeadHtml('res:'+cat+':'+key,escapeHtml(key)+' ('+grp.length+')','font-size:11.5px;font-weight:700;color:var(--navy);text-transform:uppercase;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--line);');
         grp.forEach(it=>{ h+=renderRow(it); });
+        h+='</div>';
       });
     } else {
       items=sortItems(items);
@@ -3362,8 +3376,9 @@ function renderReserve(cat,search,sort){
     }));
     app.querySelectorAll('[data-refill-ari]').forEach(el=>el.addEventListener('click',async()=>{
       const it=allItems.find(x=>x.id===el.dataset.refillAri); if(!it)return;
-      it.pressureBar='300';
-      addComment(it,'Rechargée le '+fmtDate(todayStr())+' (300 bar)');
+      const nomR=reserveNominal(it);
+      it.pressureBar=String(nomR);
+      addComment(it,'Rechargée le '+fmtDate(todayStr())+' ('+nomR+' bar)');
       render(); saveState();
     }));
     app.querySelectorAll('[data-archive-o2]').forEach(el=>el.addEventListener('click',async()=>{
@@ -3972,12 +3987,81 @@ function openAssignBottleModal(cat,it){
     alert('Bouteille assignée à '+s.vName+' — '+s.empName+'.');
   });
 }
-function syncBottleReserveLink(regType,oldNum,newNum,locationLabel,articleName){
-  // Que le numéro soit saisi à la main OU choisi via "Piocher en réserve", on garde la réserve
-  // synchronisée : l'ancien numéro redevient "en stock", le nouveau passe "monté" avec sa localisation.
-  // Bouteilles (O2/ARI) : catégorie déduite du suivi réglementaire. Autre matériel à numéro unique
-  // (groupe électrogène, désincarcérateur...) : catégorie déduite par correspondance de nom, comme
-  // pour "Copier vers la réserve".
+// ---- Sections repliables (réserves, accueil) : l'état est mémorisé sur l'appareil ----
+let uiCollapse={};
+try{ uiCollapse=JSON.parse(localStorage.getItem('verif_collapse')||'{}')||{}; }catch(e){ uiCollapse={}; }
+function saveUiCollapse(){ try{ localStorage.setItem('verif_collapse',JSON.stringify(uiCollapse)); }catch(e){} }
+function isCollapsedKey(key){ return !!uiCollapse[key]; }
+// Ouvre une section repliable : à fermer par l'appelant avec '</div>'.
+function collapseHeadHtml(key,labelHtml,style,extraHtml){
+  const c=isCollapsedKey(key);
+  return `<div class="collapse-head" data-collapse-toggle="${escapeHtml(key)}" style="cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px;${style||''}"><span class="collapse-arrow" style="display:inline-block;width:14px;">${c?'▸':'▾'}</span><span style="flex:1;">${labelHtml}</span>${extraHtml||''}</div><div class="collapse-body" data-collapse-body="${escapeHtml(key)}" style="${c?'display:none;':''}">`;
+}
+function applyCollapse(key,collapsed){
+  if(collapsed) uiCollapse[key]=1; else delete uiCollapse[key];
+  saveUiCollapse();
+  document.querySelectorAll('[data-collapse-toggle]').forEach(h=>{ if(h.dataset.collapseToggle===key){ const ar=h.querySelector('.collapse-arrow'); if(ar) ar.textContent=collapsed?'▸':'▾'; } });
+  document.querySelectorAll('[data-collapse-body]').forEach(b=>{ if(b.dataset.collapseBody===key) b.style.display=collapsed?'none':''; });
+}
+document.addEventListener('click',e=>{
+  const all=e.target.closest&&e.target.closest('[data-collapse-all]');
+  if(all){
+    const[prefix,mode]=all.dataset.collapseAll.split('|');
+    document.querySelectorAll('[data-collapse-toggle]').forEach(h=>{ if(h.dataset.collapseToggle.startsWith(prefix)) applyCollapse(h.dataset.collapseToggle,mode==='collapse'); });
+    return;
+  }
+  const h=e.target.closest&&e.target.closest('[data-collapse-toggle]');
+  if(h && !e.target.closest('select,button,input,a')){ const k=h.dataset.collapseToggle; applyCollapse(k,!isCollapsedKey(k)); }
+});
+// Règle ARI : une bouteille d'air doit être regonflée dès qu'il lui manque 10 % de sa pression nominale
+// (200 bar → en dessous de 180 ; 300 bar → en dessous de 270). Exactement 180 / 270 = encore acceptable.
+function ariRefillLimit(nominal){ const n=parseFloat(nominal); return n>0 ? Math.round(n*9)/10 : null; }
+function bottleBelowLimit(pressure,nominal){
+  if(pressure===''||pressure===undefined||pressure===null) return false;
+  const p=parseFloat(pressure), lim=ariRefillLimit(nominal);
+  return !isNaN(p) && lim!==null && p<lim;
+}
+function ariRefillCount(v){
+  let n=0;
+  v.emplacements.forEach(e=>e.articles.forEach(a=>{
+    if(a.regType==='ARI' && bottleBelowLimit(a.pressureBar,a.nominalPressure)) n++;
+    (a.sousArticles||[]).forEach(sb=>{ if(sb.regType==='ARI' && bottleBelowLimit(sb.pressureBar,sb.nominalPressure)) n++; });
+  }));
+  return n;
+}
+function reserveNominal(it){ return it.nominalPressure || 300; }
+function showInfoToast(msg,warn){
+  // Petit message non bloquant (6 s) — pour signaler un écart sans interrompre la saisie.
+  try{
+    let t=document.getElementById('infoToast');
+    if(!t){ t=document.createElement('div'); t.id='infoToast'; t.style.cssText='position:fixed;left:12px;right:12px;bottom:14px;z-index:9999;padding:10px 14px;border-radius:6px;font-size:13px;box-shadow:0 2px 10px rgba(0,0,0,.3);';
+      document.body.appendChild(t); }
+    t.style.background=warn?'#fff3cd':'#1f3a5f'; t.style.color=warn?'#6b4e00':'#fff'; t.style.border=warn?'1px solid #e0b100':'none';
+    t.textContent=msg; t.style.display='block';
+    clearTimeout(t._h); t._h=setTimeout(()=>{ t.style.display='none'; },6000);
+  }catch(e){}
+}
+// Retrouve où un numéro d'unité est déjà installé sur un engin (hors l'emplacement `selfObj`).
+function findInstalledElsewhere(num,selfObj){
+  const n=normalizeTxt(num||''); if(!n) return null;
+  for(const v of state.vehicles){
+    for(const emp of v.emplacements){
+      for(const a of emp.articles){
+        if(a!==selfObj && normalizeTxt(a.invNum||'')===n) return v.name+' — '+emp.name+' — '+a.name;
+        for(const sb of (a.sousArticles||[])){
+          if(sb!==selfObj && normalizeTxt(sb.invNum||'')===n) return v.name+' — '+emp.name+' — '+a.name+' > '+sb.name;
+        }
+      }
+    }
+  }
+  return null;
+}
+function syncBottleReserveLink(regType,oldNum,newNum,locationLabel,articleName,target,silent){
+  // Que le numéro soit saisi à la main OU choisi via "Remplacer depuis la réserve", on garde la réserve
+  // synchronisée avec le MÊME comportement : l'ancien numéro revient en réserve (ARI : « à recharger »,
+  // pression 0 ; O2 : part chez le fournisseur, donc pas remis en stock), le nouveau passe « monté » avec
+  // sa localisation, et ses caractéristiques (volume, pression nominale) sont reprises sur l'emplacement.
+  // Matériel à numéro unique (groupe électrogène, désincarcérateur...) : catégorie déduite par nom.
   let cat = regType==='O2' ? 'oxygene' : regType==='ARI' ? 'ari' : null;
   if(!cat && articleName){
     const an=normalizeTxt(articleName);
@@ -3987,14 +4071,63 @@ function syncBottleReserveLink(regType,oldNum,newNum,locationLabel,articleName){
   }
   if(!cat || !state.reserves[cat]) return;
   const on=normalizeTxt(oldNum||''), nn=normalizeTxt(newNum||'');
-  if(on && on!==nn){
+  if(on===nn) return;
+  const isBottle=(cat==='ari'||cat==='oxygene');
+  if(on){
     const oldEntry=state.reserves[cat].find(x=>normalizeTxt(x.numero||'')===on);
-    if(oldEntry){ oldEntry.qty=1; oldEntry.currentVehicleLabel=''; }
+    if(cat==='oxygene'){
+      // Bouteille O2 vidée : part chez le fournisseur, on ne la remet pas en stock.
+      if(oldEntry){ oldEntry.currentVehicleLabel=''; }
+    } else if(oldEntry){
+      oldEntry.qty=1; oldEntry.currentVehicleLabel='';
+      if(cat==='ari'){ if(!oldEntry.nominalPressure) oldEntry.nominalPressure=(target&&target.nominalPressure)||300; oldEntry.pressureBar='0'; addComment(oldEntry,'Retour vidage le '+fmtDate(todayStr())+' — à recharger (compresseur du centre)'); }
+    } else if(cat==='ari'){
+      // Bouteille ARI jamais enregistrée en réserve : on la crée pour ne pas la perdre de vue.
+      const ne={id:uid('r'),name:'Bouteille Air '+oldNum,qty:1,qtyMin:0,expiry:'',comments:[],numero:oldNum,volumeL:(target&&target.volumeL)||'',pressureBar:'0',nominalPressure:(target&&target.nominalPressure)||300};
+      addComment(ne,'Créée automatiquement lors d\'un changement de n° le '+fmtDate(todayStr())+' — à recharger');
+      state.reserves.ari.push(ne);
+    }
   }
   if(nn){
     const newEntry=state.reserves[cat].find(x=>normalizeTxt(x.numero||'')===nn);
-    if(newEntry){ newEntry.qty=0; newEntry.currentVehicleLabel=locationLabel; }
+    if(newEntry){
+      newEntry.qty=0; newEntry.currentVehicleLabel=locationLabel;
+      if(newEntry.location==='reparation') newEntry.location='stock';
+      if(isBottle && target){
+        if(newEntry.volumeL) target.volumeL=newEntry.volumeL;
+        if(newEntry.pressureBar && !target.nominalPressure) target.nominalPressure=newEntry.pressureBar;
+        target.pressureBar='';
+      }
+      addComment(newEntry,'Montée sur '+locationLabel+' le '+fmtDate(todayStr())+' (n° saisi à la main)');
+      if(target){
+        addComment(target,'N° '+(newNum||'')+' installé le '+fmtDate(todayStr())+(oldNum?' (remplace '+oldNum+')':''));
+      }
+    } else if(!silent){
+      showInfoToast('⚠ N° « '+newNum+' » introuvable dans la réserve — l\'emplacement est mis à jour mais aucune réserve ne l\'est. Vérifie le numéro.',true);
+    }
+    if(!silent && target){
+      const other=findInstalledElsewhere(newNum,target);
+      if(other) setTimeout(()=>alert('⚠ Le n° « '+newNum+' » est déjà affecté ailleurs : '+other+'.\nLa même unité ne peut pas être à deux endroits — corrige l\'un des deux emplacements.'),50);
+    }
   }
+}
+// File d'attente des changements de n° saisis dans l'écran de vérification : le champ enregistre à chaque
+// frappe, mais la synchro réserve se fait à la sortie du champ. Si l'écran est reconstruit avant (sauvegarde
+// en arrière-plan), la sortie du champ ne se déclenche jamais — on garde donc l'ancien n° ici et on rattrape.
+const pendingBottleSyncs={};
+function queueBottleSync(vehicleId,empId,artId,subId,oldNum){
+  const k=[vehicleId,empId,artId,subId||''].join(':');
+  if(!(k in pendingBottleSyncs)) pendingBottleSyncs[k]={vehicleId,empId,artId,subId:subId||'',old:oldNum||''};
+}
+function flushBottleSyncs(silent){
+  Object.keys(pendingBottleSyncs).forEach(k=>{
+    const q=pendingBottleSyncs[k]; delete pendingBottleSyncs[k];
+    const lv=state.vehicles.find(x=>x.id===q.vehicleId); const lemp=lv&&lv.emplacements.find(e=>e.id===q.empId);
+    const la=lemp&&lemp.articles.find(x=>x.id===q.artId); if(!la) return;
+    const t=q.subId?(la.sousArticles||[]).find(x=>x.id===q.subId):la; if(!t) return;
+    const label=lv.name+' — '+lemp.name+' — '+la.name+(q.subId?' > '+t.name:'');
+    syncBottleReserveLink(t.regType,q.old,t.invNum,label,t.name,t,silent);
+  });
 }
 function findBestReserveCat(name){
   // Cherche d'abord une référence de réserve dont le nom correspond, dans toutes les catégories,
@@ -4124,6 +4257,7 @@ function openReservePicker(v,empId,artId,subId){
         state.reserves.ari.push(oldEntry);
       }
       oldEntry.qty=1;
+      if(!oldEntry.nominalPressure) oldEntry.nominalPressure=target.nominalPressure||300;
       oldEntry.pressureBar='0';
       addComment(oldEntry,'Retour vidage le '+fmtDate(todayStr())+' — à recharger (compresseur du centre)');
     }
@@ -5587,13 +5721,13 @@ function bindConfigEvents(v){
   app.querySelectorAll('[data-set-o2num]').forEach(el=>el.addEventListener('change',async()=>{
     const[empId,artId]=el.dataset.setO2num.split(':'); const{a,emp}=findArt(v,empId+':'+artId);
     const oldNum=a.invNum; a.invNum=el.value.trim();
-    syncBottleReserveLink(a.regType,oldNum,a.invNum,v.name+' — '+emp.name+' — '+a.name,a.name);
+    syncBottleReserveLink(a.regType,oldNum,a.invNum,v.name+' — '+emp.name+' — '+a.name,a.name,a);
     render(); saveState();
   }));
   app.querySelectorAll('[data-set-art-invnum]').forEach(el=>el.addEventListener('change',async()=>{
     const[empId,artId]=el.dataset.setArtInvnum.split(':'); const{a,emp}=findArt(v,empId+':'+artId);
     const oldNum=a.invNum; a.invNum=el.value.trim();
-    syncBottleReserveLink('',oldNum,a.invNum,v.name+' — '+emp.name+' — '+a.name,a.name);
+    syncBottleReserveLink('',oldNum,a.invNum,v.name+' — '+emp.name+' — '+a.name,a.name,a);
     saveState();
   }));
   app.querySelectorAll('[data-pick-reserve-art-config]').forEach(el=>el.addEventListener('click',()=>{
@@ -5603,7 +5737,7 @@ function bindConfigEvents(v){
     const[empId,artId,subId]=el.dataset.setSubInvnumGeneric.split(':'); const{a,emp}=findArt(v,empId+':'+artId);
     const sub=a.sousArticles.find(s=>s.id===subId); if(!sub)return;
     const oldNum=sub.invNum; sub.invNum=el.value.trim();
-    syncBottleReserveLink('',oldNum,sub.invNum,v.name+' — '+emp.name+' — '+a.name+' > '+sub.name,sub.name);
+    syncBottleReserveLink('',oldNum,sub.invNum,v.name+' — '+emp.name+' — '+a.name+' > '+sub.name,sub.name,sub);
     saveState();
   }));
   app.querySelectorAll('[data-pick-reserve-sub-config]').forEach(el=>el.addEventListener('click',()=>{
@@ -5722,7 +5856,7 @@ function bindConfigEvents(v){
   app.querySelectorAll('[data-set-sub-invnum]').forEach(el=>el.addEventListener('change',async()=>{
     const[empId,artId,subId]=el.dataset.setSubInvnum.split(':'); const{a,emp}=findArt(v,empId+':'+artId);
     const sub=a.sousArticles.find(s=>s.id===subId); const oldNum=sub.invNum; sub.invNum=el.value.trim();
-    syncBottleReserveLink(sub.regType,oldNum,sub.invNum,v.name+' — '+emp.name+' — '+a.name+' > '+sub.name,sub.name);
+    syncBottleReserveLink(sub.regType,oldNum,sub.invNum,v.name+' — '+emp.name+' — '+a.name+' > '+sub.name,sub.name,sub);
     render(); saveState();
   }));
   app.querySelectorAll('[data-set-sub-volume]').forEach(el=>el.addEventListener('change',async()=>{
@@ -6162,7 +6296,7 @@ function renderCheck(vehicleId){
         const isBottle=a.regType==='O2'||a.regType==='ARI';
         const theoLiters=isBottle && a.volumeL && a.nominalPressure ? Math.round(parseFloat(a.volumeL)*parseFloat(a.nominalPressure)) : null;
         const realLiters=isBottle && a.volumeL && a.pressureBar ? Math.round(parseFloat(a.volumeL)*parseFloat(a.pressureBar)) : null;
-        const pressLow=isBottle && a.pressureBar!=='' && a.nominalPressure && parseFloat(a.pressureBar)<parseFloat(a.nominalPressure)*0.9;
+        const pressLow=isBottle && bottleBelowLimit(a.pressureBar,a.nominalPressure);
         const pressMissing=isBottle && a.pressureBar==='';
         const gasLabel=a.regType==='ARI'?'L air':'L O2';
         const dis=readOnly?' disabled':'';
@@ -6175,7 +6309,7 @@ function renderCheck(vehicleId){
             <label>Pression réelle (bar)${a.pressureLocked?' 🔒':''}</label><input type="number" inputmode="numeric" onfocus="this.select()" min="0"${dis}${a.pressureLocked?' disabled title="Pression verrouillée en Configuration — pas besoin de la remesurer"':''} style="width:78px;${pressLow?'background:#fdecec;border-color:var(--red-dark);color:var(--red-dark);font-weight:700;':''}" value="${a.pressureBar||''}" placeholder="à mesurer" data-set-check-o2pres="${emp.id}:${a.id}">
             ${a.volumeL?`<span class="article-sub">× ${a.volumeL} L</span>`:''}
             ${theoLiters!==null?`<span class="article-sub">Théorique (${a.nominalPressure} bar) : ${theoLiters} ${gasLabel}</span>`:''}
-            ${realLiters!==null?`<span class="tag" style="${pressLow?'background:var(--red-dark);':''}">≈ ${realLiters} ${gasLabel} réel${pressLow?' — sous 90% du nominal':''}</span>`:(a.volumeL?'<span class="article-sub">(pression réelle non renseignée)</span>':'<span class="article-sub">(renseigner le volume en Configurer)</span>')}
+            ${realLiters!==null?`<span class="tag" style="${pressLow?'background:var(--red-dark);':''}">≈ ${realLiters} ${gasLabel} réel${pressLow?(a.regType==='ARI'?' — ⚠ À REGONFLER (sous '+ariRefillLimit(a.nominalPressure)+' bar)':' — sous 90% du nominal'):''}</span>`:(a.volumeL?'<span class="article-sub">(pression réelle non renseignée)</span>':'<span class="article-sub">(renseigner le volume en Configurer)</span>')}
             ${readOnly?'':`<button class="btn small ghost" data-pick-reserve-art-any="${emp.id}:${a.id}">🔁 Depuis réserve</button>`}</div>`:''}
           ${renderCommentsBlock(a,'art:'+emp.id+':'+a.id)}
           ${(a.photos||[]).length?`<div class="check-art-photos">${a.photos.map(p=>`<img src="${p}" style="cursor:pointer;" onclick="openPhotoLightbox(this.src)">`).join('')}</div>`:''}`;
@@ -6188,14 +6322,14 @@ function renderCheck(vehicleId){
               const subIsBottle=sub.regType==='O2'||sub.regType==='ARI';
               const subTheoLiters=subIsBottle && sub.volumeL && sub.nominalPressure ? Math.round(parseFloat(sub.volumeL)*parseFloat(sub.nominalPressure)) : null;
               const subRealLiters=subIsBottle && sub.volumeL && sub.pressureBar ? Math.round(parseFloat(sub.volumeL)*parseFloat(sub.pressureBar)) : null;
-              const subPressLow=subIsBottle && sub.pressureBar!=='' && sub.nominalPressure && parseFloat(sub.pressureBar)<parseFloat(sub.nominalPressure)*0.9;
+              const subPressLow=subIsBottle && bottleBelowLimit(sub.pressureBar,sub.nominalPressure);
               const subGasLabel=sub.regType==='ARI'?'L air':'L O2';
               html+=`<div class="check-sub-row" data-sub-row="${emp.id}:${a.id}:${sub.id}"><span>${escapeHtml(sub.name)} <span class="article-sub">(qté ${sub.qty})</span> ${sub.regType?`<span class="reg-badge">${REG_TYPES[sub.regType]}</span>`:''} ${sub.expiry?`<span class="reg-badge ${subReg==='overdue'?'overdue':(subReg==='soon'?'soon':'')}">Péremption ${fmtDate(sub.expiry)}</span>`:''}${sub.wrongLocation?' <span class="reg-badge overdue">📍 Mauvais emplacement</span>':''} <button class="comment-btn ${sub.comments&&sub.comments.length?'has-comment':''}"${dis} title="Ajouter un commentaire" data-comment-sub="${emp.id}:${a.id}:${sub.id}">💬</button> <button class="comment-btn ${sub.wrongLocation?'has-comment':''}"${dis} title="${sub.wrongLocation?'Retirer le signalement':'Signaler un mauvais emplacement'}" data-wrong-loc-sub="${emp.id}:${a.id}:${sub.id}">📍</button> ${subIsBottle?'':`<button class="comment-btn ${sub.expiry?'has-comment':''}"${dis} title="${sub.expiry?'Modifier la péremption':'Ajouter une péremption (si applicable)'}" data-set-sub-expiry-btn="${emp.id}:${a.id}:${sub.id}">📅</button>`}</span>
                 ${subIsBottle?`<div class="field-inline" style="margin-top:0;width:100%;"><label>N° bouteille</label><input value="${escapeHtml(sub.invNum||'')}"${dis} style="width:120px;" placeholder="numéro" data-set-check-subbottle-num="${emp.id}:${a.id}:${sub.id}">
                 <label>Pression réelle (bar)${sub.pressureLocked?' 🔒':''}</label><input type="number" inputmode="numeric" onfocus="this.select()" min="0"${dis}${sub.pressureLocked?' disabled title="Pression verrouillée en Configuration — pas besoin de la remesurer"':''} style="width:78px;${subPressLow?'background:#fdecec;border-color:var(--red-dark);color:var(--red-dark);font-weight:700;':''}" value="${sub.pressureBar||''}" placeholder="à mesurer" data-set-check-subbottle-pres="${emp.id}:${a.id}:${sub.id}">
                 ${sub.volumeL?`<span class="article-sub">× ${sub.volumeL} L</span>`:''}
                 ${subTheoLiters!==null?`<span class="article-sub">Théorique (${sub.nominalPressure} bar) : ${subTheoLiters} ${subGasLabel}</span>`:''}
-                ${subRealLiters!==null?`<span class="tag" style="${subPressLow?'background:var(--red-dark);':''}">≈ ${subRealLiters} ${subGasLabel} réel${subPressLow?' — sous 90% du nominal':''}</span>`:(sub.volumeL?'<span class="article-sub">(pression réelle non renseignée)</span>':'')}
+                ${subRealLiters!==null?`<span class="tag" style="${subPressLow?'background:var(--red-dark);':''}">≈ ${subRealLiters} ${subGasLabel} réel${subPressLow?(sub.regType==='ARI'?' — ⚠ À REGONFLER (sous '+ariRefillLimit(sub.nominalPressure)+' bar)':' — sous 90% du nominal'):''}</span>`:(sub.volumeL?'<span class="article-sub">(pression réelle non renseignée)</span>':'')}
                 ${readOnly?'':`<button class="btn small ghost" data-pick-reserve-sub-any="${emp.id}:${a.id}:${sub.id}">🔁 Changer depuis réserve</button>`}</div>`:''}
                 ${sub.isContainer?`<div class="check-sub-list" style="margin-left:16px;border-left:2px dashed var(--line);padding-left:10px;">
                   ${(sub.sousArticles||[]).map(ss=>`<div class="check-sub-row" data-subsub-row="${emp.id}:${a.id}:${sub.id}:${ss.id}"><span>${escapeHtml(ss.name)} <span class="article-sub">(qté ${ss.qty})</span>${ss.wrongLocation?' <span class="reg-badge overdue">📍 Mauvais emplacement</span>':''} <button class="comment-btn ${ss.comments&&ss.comments.length?'has-comment':''}"${dis} title="Ajouter un commentaire" data-comment-subsub="${emp.id}:${a.id}:${sub.id}:${ss.id}">💬</button></span>
@@ -6382,18 +6516,13 @@ function renderCheck(vehicleId){
   }));
   app.querySelectorAll('[data-set-check-o2num]').forEach(el=>{
     // 'input' pour ne rien perdre de la saisie, et re-affichage seulement à la sortie du champ.
-    el.addEventListener('focus',()=>{ const[e1,a1]=el.dataset.setCheckO2num.split(':'); const{a}=findArt(v,e1+':'+a1); el.dataset._old=a.invNum||''; });
-    el.addEventListener('input',()=>{ const[e1,a1]=el.dataset.setCheckO2num.split(':'); const{a}=findArt(v,e1+':'+a1); a.invNum=el.value.trim(); saveState(); });
-    el.addEventListener('blur',()=>{
-      const[e1,a1]=el.dataset.setCheckO2num.split(':'); const{a,emp}=findArt(v,e1+':'+a1);
-      syncBottleReserveLink(a.regType,el.dataset._old||'',a.invNum,v.name+' — '+emp.name+' — '+a.name,a.name);
-      render(); saveState();
-    });
+    el.addEventListener('input',()=>{ const[e1,a1]=el.dataset.setCheckO2num.split(':'); const{a}=findArt(v,e1+':'+a1); queueBottleSync(v.id,e1,a1,null,a.invNum); a.invNum=el.value.trim(); saveState(); });
+    el.addEventListener('blur',()=>{ flushBottleSyncs(false); render(); saveState(); });
   });
   app.querySelectorAll('[data-set-check-subbottle-num]').forEach(el=>el.addEventListener('change',async()=>{
     const[empId,artId,subId]=el.dataset.setCheckSubbottleNum.split(':'); const{a,emp}=findArt(v,empId+':'+artId);
     const sub=a.sousArticles.find(s=>s.id===subId); const oldNum=sub.invNum; sub.invNum=el.value.trim();
-    syncBottleReserveLink(sub.regType,oldNum,sub.invNum,v.name+' — '+emp.name+' — '+a.name+' > '+sub.name,sub.name);
+    syncBottleReserveLink(sub.regType,oldNum,sub.invNum,v.name+' — '+emp.name+' — '+a.name+' > '+sub.name,sub.name,sub);
     render(); saveState();
   }));
   app.querySelectorAll('[data-set-check-subbottle-pres]').forEach(el=>{
