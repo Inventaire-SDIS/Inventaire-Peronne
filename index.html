@@ -588,12 +588,39 @@ input,select,textarea{max-width:100%;box-sizing:border-box;}
 <script>
 // Liste de secours utilisée tant que le registre partagé n'a pas encore été chargé (ou si jamais il
 // est inaccessible) — Péronne y reste toujours pour garantir la continuité des appareils déjà en service.
-let CIS_REGISTRY=[
+const CIS_REGISTRY_DEFAULTS=[
   {id:'peronne', name:'CSP Péronne', code:'80PE1'},
-  {id:'catelat', name:'CSP CATELAS', code:'80CA1'},
+  {id:'catelat', name:'CSP Amiens-Catelas', code:'80CA1'}, // identifiant et code inchangés : seul le nom affiché a changé (v1.60.0)
   {id:'moreuil', name:'CS MOREUIL', code:'80MO1'},
-  {id:'roisel', name:'CS ROISEL', code:'80RO1'}
+  {id:'roisel', name:'CS ROISEL', code:'80RO1'},
+  // Centres ajoutés en v1.60.0 (phase de test) — ajoutés automatiquement au registre partagé s'ils n'y sont pas.
+  {id:'amiensferry', name:'CSP Amiens-Ferry', code:'80AF1'},
+  {id:'amienspoulainville', name:'CSP Amiens-Poulainville', code:'80AP1'},
+  {id:'abbeville', name:'CSP Abbeville', code:'80AB1'},
+  {id:'doullens', name:'CS Doullens', code:'80DO1'},
+  {id:'flixecourt', name:'CS Flixecourt', code:'80FL1'},
+  {id:'roye', name:'CS Roye', code:'80RY1'},
+  {id:'valdesomme', name:'CS Val de Somme', code:'80VS1'}
 ];
+const CATELAS_NEW_NAME='CSP Amiens-Catelas';
+const CIS_ADDED_V160=['amiensferry','amienspoulainville','abbeville','doullens','flixecourt','roye','valdesomme'];
+function cisNameKey(name){ return normalizeTxt(name).replace(/^(csp|cs)\s+/,'').replace(/[^a-z0-9]+/g,''); }
+// Mise à jour du registre partagé (v1.60.0), idempotente : renomme Catelas (même id, même code) et ajoute
+// les nouveaux centres absents. Un centre n'est jamais ajouté en double : on le considère déjà présent si
+// son identifiant, son code OU son nom (sans « CSP »/« CS », accents et tirets ignorés) existe déjà.
+// Aucun centre existant n'est supprimé ni modifié, à part le nom affiché de Catelas.
+function migrateCisRegistry(list){
+  let changed=false;
+  list.forEach(c=>{
+    if(c && c.id==='catelat' && c.name!==CATELAS_NEW_NAME && /^\s*(csp\s+)?catela[st]\s*$/i.test(c.name||'')){ c.name=CATELAS_NEW_NAME; changed=true; }
+  });
+  CIS_REGISTRY_DEFAULTS.filter(d=>CIS_ADDED_V160.indexOf(d.id)>=0).forEach(d=>{
+    const exists=list.some(c=>c && (c.id===d.id || String(c.code||'').toUpperCase()===d.code || cisNameKey(c.name)===cisNameKey(d.name)));
+    if(!exists){ list.push({id:d.id,name:d.name,code:d.code}); changed=true; }
+  });
+  return changed;
+}
+let CIS_REGISTRY=CIS_REGISTRY_DEFAULTS.map(c=>Object.assign({},c));
 const CIS_REGISTRY_KEY='sp-inv-centers-registry';
 async function loadCisRegistry(){
   // Le registre des centres est maintenant partagé (un seul document, commun à tous les centres) —
@@ -608,10 +635,25 @@ async function loadCisRegistry(){
         // frappe "CSP CATELAT" au lieu du vrai nom "CSP CATELAS". Cette liste codée en dur ayant déjà été
         // corrigée ne change rien pour un centre déjà enregistré — on corrige donc aussi la copie
         // partagée ici, une fois, si on la retrouve encore sous l'ancien nom.
-        let fixed=false;
-        remote.forEach(c=>{ if(c && c.name==='CSP CATELAT'){ c.name='CSP CATELAS'; fixed=true; } });
+        // (v1.60.0) : le nom affiché devient « CSP Amiens-Catelas » (id et code inchangés) et les nouveaux
+        // centres sont ajoutés — voir migrateCisRegistry. L'écriture relit le registre du serveur dans une
+        // transaction, pour ne jamais écraser un centre ajouté au même moment depuis un autre appareil.
+        const fixed=migrateCisRegistry(remote);
         CIS_REGISTRY=remote;
-        if(fixed){ try{ await window.storage.set(CIS_REGISTRY_KEY,JSON.stringify(CIS_REGISTRY),true); }catch(e){} }
+        if(fixed){
+          try{
+            if(window.storage.transact){
+              const finalValue=await window.storage.transact(CIS_REGISTRY_KEY, async(cur)=>{
+                let fresh=null; try{ fresh=cur?JSON.parse(cur):null; }catch(e){ fresh=null; }
+                if(!Array.isArray(fresh) || !fresh.length) return undefined; // registre illisible : on n'écrit rien
+                return migrateCisRegistry(fresh) ? JSON.stringify(fresh) : undefined;
+              });
+              try{ const f=finalValue?JSON.parse(finalValue):null; if(Array.isArray(f)&&f.length) CIS_REGISTRY=f; }catch(e){}
+            } else {
+              await window.storage.set(CIS_REGISTRY_KEY,JSON.stringify(CIS_REGISTRY),true);
+            }
+          }catch(e){ console.error('Mise à jour du registre des centres impossible :',e); }
+        }
       }
     } else {
       // Premier lancement du registre partagé : on l'initialise avec la liste de secours actuelle.
@@ -849,11 +891,16 @@ function resetWeeklyTechCheckIfNeeded(v){
 // véhicule est du texte libre saisi séparément à la création — il ne se met jamais à jour tout seul
 // quand le registre change. On corrige donc ici aussi, partout où le nom apparaît encore, sur n'importe
 // quel véhicule.
+function renameCatelas(str){ return (typeof str==='string' && /^\s*(csp\s+)?catela[st]\s*$/i.test(str)) ? CATELAS_NEW_NAME : str; }
 function fixCatelasTypo(str){ return (typeof str==='string') ? str.replace(/catelat/i,'CATELAS') : str; }
 function ensureVehicleShape(v){
   if(v.cis && /catelat/i.test(v.cis)) v.cis=fixCatelasTypo(v.cis);
   if(v.currentCis && /catelat/i.test(v.currentCis)) v.currentCis=fixCatelasTypo(v.currentCis);
   if(v.loanedToCenterName && /catelat/i.test(v.loanedToCenterName)) v.loanedToCenterName=fixCatelasTypo(v.loanedToCenterName);
+  // v1.60.0 : « CSP CATELAS » s'affiche désormais « CSP Amiens-Catelas ». "cis" et "currentCis" sont
+  // renommés ensemble (ils sont comparés entre eux) ; seul le texte exact du nom est concerné.
+  v.cis=renameCatelas(v.cis); v.currentCis=renameCatelas(v.currentCis); v.loanedToCenterName=renameCatelas(v.loanedToCenterName);
+  if(v.loanedFrom && v.loanedFrom.centerName) v.loanedFrom.centerName=renameCatelas(v.loanedFrom.centerName);
   if(!v.techCheck) v.techCheck=defaultTechCheck();
   if(!v.techCheck.carrosseriePhotos) v.techCheck.carrosseriePhotos=[];
   if(!v.techCheck.sig) v.techCheck.sig={};
@@ -1135,6 +1182,7 @@ function ensureReservesShape(){
   if(!Array.isArray(state.repairDestinations)) state.repairDestinations=['Atelier interne','Pôle logistique'];
   if(state.adminPasswordHash===undefined) state.adminPasswordHash='';
   if(!Array.isArray(state.centres)) state.centres=[];
+  if(state.centres.some(c=>renameCatelas(c)!==c)) state.centres=Array.from(new Set(state.centres.map(renameCatelas)));
   if(!Array.isArray(state.hospitalTracking)) state.hospitalTracking=[];
   if(!Array.isArray(state.garages)) state.garages=['Atelier départemental'];
   if(!Array.isArray(state.roadClosures)) state.roadClosures=[];
@@ -1343,48 +1391,116 @@ function openEmptyCenterConfirmModal(){
     await saveState(); await flushSave();
   });
 }
-const DAILY_BACKUP_PREFIX='sp-inv-daily-backup-';
+// ---- Sauvegardes automatiques quotidiennes : UNE PAR CENTRE ET PAR JOUR (v1.59.2) ----
+// Avant la v1.59.2, la clé ne contenait que la date ("sp-inv-daily-backup-AAAA-MM-JJ") : une seule copie
+// par jour pour TOUS les centres, celle du premier centre ouvert dans la journée — les autres centres
+// n'étaient pas sauvegardés ce jour-là, et "Restaurer" pouvait injecter les données d'un autre centre.
+// Désormais chaque centre a ses propres copies : "sp-inv-backup-day-<centre>-AAAA-MM-JJ".
+//  - Le nouveau préfixe ne commence volontairement PAS par l'ancien : un appareil resté sur une ancienne
+//    version (qui nettoie tout ce qui commence par "sp-inv-daily-backup-") ne peut donc jamais supprimer
+//    les nouvelles sauvegardes.
+//  - La liste des dates disponibles est tenue dans un petit document "index" par centre : on n'a plus
+//    besoin de lire toute la collection (qui téléchargeait le contenu complet de chaque centre et de
+//    chaque sauvegarde) pour savoir ce qui existe — beaucoup moins de données échangées.
+//  - Les anciennes sauvegardes communes ne sont jamais supprimées ni réécrites par cette version : elles
+//    restent consultables (téléchargement seulement) depuis la fenêtre des sauvegardes.
+const DAILY_BACKUP_PREFIX_LEGACY='sp-inv-daily-backup-';
 const DAILY_BACKUP_KEEP_DAYS=30;
-async function maybeCreateDailyBackup(){
-  // Filet de sécurité indépendant des données actives : une copie complète par jour, conservée
-  // DAILY_BACKUP_KEEP_DAYS jours, pour pouvoir revenir en arrière en cas de problème (bug, erreur
-  // de manipulation...) sans dépendre uniquement d'une sauvegarde manuelle faite au bon moment.
-  if(!state || !Array.isArray(state.vehicles)) return;
-  const key=DAILY_BACKUP_PREFIX+todayStr();
-  try{
-    const existing=await window.storage.get(key,true);
-    if(existing && existing.value) return; // déjà fait aujourd'hui
-  }catch(e){ return; } // en cas de doute sur l'état existant, on ne force pas une écriture
-  try{
-    await window.storage.set(key,JSON.stringify(state),true);
-    pruneOldDailyBackups();
-  }catch(e){ console.error('Sauvegarde quotidienne automatique échouée :',e); }
+const BACKUP_CENTER_ID=getSelectedCenterId()||'peronne'; // même centre que STORAGE_KEY
+const DAILY_BACKUP_PREFIX='sp-inv-backup-day-'+BACKUP_CENTER_ID+'-';
+const DAILY_BACKUP_INDEX_KEY='sp-inv-backup-index-'+BACKUP_CENTER_ID;
+const BACKUP_DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
+function parseBackupIndex(value){
+  if(!value) return [];
+  try{ const a=JSON.parse(value); return Array.isArray(a)?a.filter(d=>typeof d==='string'&&BACKUP_DATE_RE.test(d)):[]; }
+  catch(e){ return []; }
 }
-async function pruneOldDailyBackups(){
+async function readBackupIndex(){
+  const res=await window.storage.get(DAILY_BACKUP_INDEX_KEY,true);
+  return parseBackupIndex(res&&res.value);
+}
+// Ajoute une date à l'index du centre (de façon atomique quand c'est possible, pour ne pas perdre l'ajout
+// fait au même moment par un autre appareil) et renvoie {kept, removed} : les dates au-delà des
+// DAILY_BACKUP_KEEP_DAYS plus récentes sont retirées de l'index.
+async function addDateToBackupIndex(date){
+  let removed=[];
+  const compute=(currentValue)=>{
+    const dates=parseBackupIndex(currentValue);
+    if(dates.indexOf(date)<0) dates.push(date);
+    dates.sort();
+    const cut=Math.max(0,dates.length-DAILY_BACKUP_KEEP_DAYS);
+    removed=dates.slice(0,cut);
+    return dates.slice(cut);
+  };
+  let kept;
+  if(window.storage.transact){
+    const v=await window.storage.transact(DAILY_BACKUP_INDEX_KEY, async(currentValue)=>JSON.stringify(compute(currentValue)));
+    kept=parseBackupIndex(v);
+  } else {
+    const res=await window.storage.get(DAILY_BACKUP_INDEX_KEY,true);
+    kept=compute(res&&res.value);
+    await window.storage.set(DAILY_BACKUP_INDEX_KEY,JSON.stringify(kept),true);
+  }
+  return {kept,removed};
+}
+async function maybeCreateDailyBackup(){
+  // Filet de sécurité indépendant des données actives : une copie complète par jour ET par centre,
+  // conservée DAILY_BACKUP_KEEP_DAYS jours, pour pouvoir revenir en arrière en cas de problème.
+  if(!state || !Array.isArray(state.vehicles)) return;
+  if(loadFailed || needsEmptyCenterConfirm) return; // jamais de copie d'un état non confirmé
+  const today=todayStr();
+  let dates;
+  try{ dates=await readBackupIndex(); }
+  catch(e){ return; } // en cas de doute sur l'état existant, on ne force pas une écriture
+  if(dates.indexOf(today)>=0) return; // déjà fait aujourd'hui pour ce centre
   try{
-    const res=await window.storage.list(DAILY_BACKUP_PREFIX,true);
-    if(!res || !res.keys) return;
-    const dates=res.keys.map(k=>k.replace(DAILY_BACKUP_PREFIX,'')).sort();
-    const cutoffIdx=dates.length-DAILY_BACKUP_KEEP_DAYS;
-    if(cutoffIdx<=0) return;
-    const toDelete=dates.slice(0,cutoffIdx);
-    for(const d of toDelete){ try{ await window.storage.delete(DAILY_BACKUP_PREFIX+d,true); }catch(e){} }
-  }catch(e){ console.error('Nettoyage des anciennes sauvegardes échoué :',e); }
+    await window.storage.set(DAILY_BACKUP_PREFIX+today,JSON.stringify(state),true);
+  }catch(e){ console.error('Sauvegarde quotidienne automatique échouée :',e); return; }
+  try{
+    const {removed}=await addDateToBackupIndex(today);
+    // Les copies trop anciennes ne sont supprimées qu'APRÈS l'écriture réussie de la copie du jour et
+    // la mise à jour de l'index — jamais l'inverse.
+    for(const d of removed){ try{ await window.storage.delete(DAILY_BACKUP_PREFIX+d,true); }catch(e){} }
+  }catch(e){ console.error('Mise à jour de l\'index des sauvegardes échouée :',e); }
 }
 async function openDailyBackupsModal(){
+  const centerName=getSelectedCenter().name;
   const overlay=document.createElement('div'); overlay.className='overlay';
-  overlay.innerHTML=`<div class="modal wide"><h3>🗓 Sauvegardes automatiques quotidiennes</h3>
-    <p style="font-size:12px;color:var(--muted);">Une copie complète est conservée chaque jour (${DAILY_BACKUP_KEEP_DAYS} derniers jours). Utile en cas de problème pour revenir à un état antérieur.</p>
+  overlay.innerHTML=`<div class="modal wide"><h3>🗓 Sauvegardes automatiques quotidiennes — ${escapeHtml(centerName)}</h3>
+    <p style="font-size:12px;color:var(--muted);">Une copie complète de ce centre est conservée chaque jour (${DAILY_BACKUP_KEEP_DAYS} derniers jours). Utile en cas de problème pour revenir à un état antérieur.</p>
     <div id="dailyBackupsList" style="max-height:340px;overflow-y:auto;"><p style="font-size:12.5px;color:var(--muted);">Chargement…</p></div>
+    <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px;">
+      <button class="btn small ghost" id="dbLegacyBtn">Anciennes sauvegardes communes (avant v1.59.2)…</button>
+      <div id="dbLegacyList" style="max-height:220px;overflow-y:auto;"></div>
+    </div>
     <div class="modal-actions"><button class="btn ghost" id="dbClose">Fermer</button></div></div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
   document.getElementById('dbClose').addEventListener('click',()=>overlay.remove());
+  document.getElementById('dbLegacyBtn').addEventListener('click',async()=>{
+    // Anciennes copies communes à tous les centres : elles peuvent contenir les données d'un AUTRE
+    // centre que celui-ci — téléchargement uniquement, pas de restauration directe.
+    const el=document.getElementById('dbLegacyList');
+    el.innerHTML='<p style="font-size:12.5px;color:var(--muted);">Chargement… (peut prendre un moment)</p>';
+    try{
+      const res=await window.storage.list(DAILY_BACKUP_PREFIX_LEGACY,true);
+      const olds=(res&&res.keys?res.keys:[]).map(k=>k.slice(DAILY_BACKUP_PREFIX_LEGACY.length)).filter(d=>BACKUP_DATE_RE.test(d)).sort().reverse();
+      if(!olds.length){ el.innerHTML='<p style="font-size:12.5px;color:var(--muted);">Aucune ancienne sauvegarde commune.</p>'; return; }
+      el.innerHTML=`<p style="font-size:11.5px;color:var(--red-dark);margin:8px 0;">⚠ Ces copies datent d'avant la séparation par centre : chacune contient le centre qui a été ouvert en premier ce jour-là, pas forcément « ${escapeHtml(centerName)} ». Téléchargement seulement.</p>`+
+        olds.map(d=>`<div class="article-row" style="grid-template-columns:1fr 100px;">
+          <div style="font-size:12.5px;"><b>${fmtDate(d)}</b></div>
+          <button class="btn small ghost" data-download-legacy="${d}">⬇ Télécharger</button></div>`).join('');
+      el.querySelectorAll('[data-download-legacy]').forEach(btn=>btn.addEventListener('click',async()=>{
+        const d=btn.dataset.downloadLegacy;
+        const r=await window.storage.get(DAILY_BACKUP_PREFIX_LEGACY+d,true);
+        if(r&&r.value) downloadFile('ancienne_sauvegarde_commune_'+d+'.json',r.value,'application/json');
+      }));
+    }catch(e){ el.innerHTML='<p style="font-size:12.5px;color:var(--red-dark);">Impossible de récupérer les anciennes sauvegardes.</p>'; }
+  });
   try{
-    const res=await window.storage.list(DAILY_BACKUP_PREFIX,true);
-    const dates=(res&&res.keys?res.keys.map(k=>k.replace(DAILY_BACKUP_PREFIX,'')):[]).sort().reverse();
+    const dates=(await readBackupIndex()).sort().reverse();
     const listEl=document.getElementById('dailyBackupsList');
-    if(!dates.length){ listEl.innerHTML='<p style="font-size:12.5px;color:var(--muted);">Aucune sauvegarde automatique disponible pour l\'instant.</p>'; return; }
+    if(!dates.length){ listEl.innerHTML='<p style="font-size:12.5px;color:var(--muted);">Aucune sauvegarde automatique disponible pour l\'instant pour ce centre.</p>'; return; }
     listEl.innerHTML=dates.map(d=>`<div class="article-row" style="grid-template-columns:1fr 100px 100px;">
       <div style="font-size:12.5px;"><b>${fmtDate(d)}</b>${d===todayStr()?' <span class="tag">Aujourd\'hui</span>':''}</div>
       <button class="btn small ghost" data-download-backup="${d}">⬇ Télécharger</button>
@@ -1393,11 +1509,12 @@ async function openDailyBackupsModal(){
     listEl.querySelectorAll('[data-download-backup]').forEach(btn=>btn.addEventListener('click',async()=>{
       const d=btn.dataset.downloadBackup;
       const res2=await window.storage.get(DAILY_BACKUP_PREFIX+d,true);
-      if(res2&&res2.value) downloadFile('sauvegarde_auto_'+d+'.json',res2.value,'application/json');
+      if(res2&&res2.value) downloadFile('sauvegarde_auto_'+BACKUP_CENTER_ID+'_'+d+'.json',res2.value,'application/json');
+      else alert('Sauvegarde introuvable.');
     }));
     listEl.querySelectorAll('[data-restore-backup]').forEach(btn=>btn.addEventListener('click',()=>requireAdmin(async()=>{
       const d=btn.dataset.restoreBackup;
-      if(!confirm('Restaurer la sauvegarde automatique du '+fmtDate(d)+' ? Ceci remplace TOUTES les données actuelles par celles de ce jour-là.')) return;
+      if(!confirm('Restaurer la sauvegarde automatique du '+fmtDate(d)+' pour « '+centerName+' » ? Ceci remplace TOUTES les données actuelles de ce centre par celles de ce jour-là.')) return;
       const res2=await window.storage.get(DAILY_BACKUP_PREFIX+d,true);
       if(!res2||!res2.value){ alert('Sauvegarde introuvable.'); return; }
       try{
@@ -2081,7 +2198,7 @@ function render(){
     }
   }
 }
-const APP_VERSION='1.59.1'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.61.0'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -4016,9 +4133,14 @@ document.addEventListener('click',e=>{
 // Règle ARI : une bouteille d'air doit être regonflée dès qu'il lui manque 10 % de sa pression nominale
 // (200 bar → en dessous de 180 ; 300 bar → en dessous de 270). Exactement 180 / 270 = encore acceptable.
 function ariRefillLimit(nominal){ const n=parseFloat(nominal); return n>0 ? Math.round(n*9)/10 : null; }
-function bottleBelowLimit(pressure,nominal){
+// Règle oxygène (v1.60.0) : par défaut, une bouteille d'O2 est sous le minimum en dessous de 40 % de sa
+// pression nominale (200 bar → sous 80 bar). Distinct de la règle des 10 % des bouteilles d'air (ARI).
+const O2_MIN_PCT=40;
+function o2MinLimit(nominal){ const n=parseFloat(nominal); return n>0 ? Math.round(n*O2_MIN_PCT)/100 : null; }
+function bottleMinLimit(nominal,regType){ return regType==='O2' ? o2MinLimit(nominal) : ariRefillLimit(nominal); }
+function bottleBelowLimit(pressure,nominal,regType){
   if(pressure===''||pressure===undefined||pressure===null) return false;
-  const p=parseFloat(pressure), lim=ariRefillLimit(nominal);
+  const p=parseFloat(pressure), lim=bottleMinLimit(nominal,regType);
   return !isNaN(p) && lim!==null && p<lim;
 }
 function ariRefillCount(v){
@@ -4921,7 +5043,7 @@ function helpTutoContent(){
       <li>Tu peux aussi taper directement le numéro sur le véhicule : la réserve se met à jour toute seule (à condition que la bouteille existe déjà en réserve).</li>
       <li>La réserve indique en permanence <b>"📍 Sur : véhicule — emplacement — article"</b> pour chaque bouteille sortie.</li>
       <li>Tri <b>par emplacement</b> par défaut : regroupement stock / par véhicule / en réparation, puis par contenance et pression nominale.</li>
-      <li>Lors d'une vérification, l'agent doit saisir la <b>pression réelle mesurée</b> — impossible de valider "OK" sans elle. La case devient <b>rouge</b> si la pression est sous 90% du nominal. La capacité théorique reste affichée à titre de comparaison.</li>
+      <li>Lors d'une vérification, l'agent doit saisir la <b>pression réelle mesurée</b> — impossible de valider "OK" sans elle. La case devient <b>rouge</b> si la pression est sous le minimum : 90 % du nominal pour l'air (ARI), 40 % du nominal pour l'oxygène. La capacité théorique reste affichée à titre de comparaison.</li>
       <li>Oxygène : <b>"📤 Renvoyer vers la pharmacie départementale"</b> sort la bouteille du stock actif et l'archive (consultable via le bouton "📦 Renvoyées en pharmacie", avec possibilité de remise en stock).</li>
       <li>ARI : bouton <b>"✓ Bouteille rechargée"</b> pour les bouteilles vides remises à 300 bar sur place.</li>
     </ul>
@@ -5005,7 +5127,7 @@ function helpFaqContent(){
     ['Comment imprimer une check-list papier de secours ?','Bouton "🖨 Imprimer" dans la vérification d\'un véhicule ou dans le récapitulatif du jour — tous les menus se déplient automatiquement et seuls les éléments utiles à la lecture papier restent affichés.'],
     ['Comment sauvegarder mes données régulièrement ?','Deux filets : le bouton "💾" en haut de l\'écran télécharge une sauvegarde complète immédiate, et l\'appli enregistre en plus automatiquement une copie chaque jour (bouton "🗓", 30 derniers jours conservés, restauration possible à n\'importe quelle date).'],
     ['Je ne trouve plus les boutons Configurer, Dupliquer, + Véhicule…','Ils sont masqués par défaut pour éviter les fausses manipulations. Clique sur "🛠" en haut de l\'écran et saisis le mot de passe administrateur : ils apparaissent aussitôt.'],
-    ['Pourquoi je dois saisir la pression réelle des bouteilles ?','Pour garantir un contrôle réel et pas une simple validation de routine. Tant que la pression mesurée n\'est pas renseignée, la bouteille ne peut pas être validée "OK". La case devient rouge si la pression est sous 90% de la pression nominale de la bouteille.'],
+    ['Pourquoi je dois saisir la pression réelle des bouteilles ?','Pour garantir un contrôle réel et pas une simple validation de routine. Tant que la pression mesurée n\'est pas renseignée, la bouteille ne peut pas être validée "OK". La case devient rouge si la pression est sous le minimum : 90 % de la pression nominale pour une bouteille d\'air (ARI), 40 % pour une bouteille d\'oxygène.'],
     ['Je vois les données d\'un autre centre, ou je ne trouve pas les miennes ?','Vérifie le nom du centre affiché sous le titre "Vérif" en haut de l\'écran. Si ce n\'est pas le bon, menu ☰ → "Changer de centre (CIS)" pour basculer sur le bon centre (le code est fourni par le responsable de centre).'],
     ['Ma saisie de pression ne s\'enregistrait pas, c\'est corrigé ?','Oui. Le champ prend maintenant en compte chaque chiffre tapé sans attendre que tu sortes du champ, et le clavier numérique s\'affiche directement sur mobile. Plus besoin d\'utiliser les petites flèches.'],
     ['Une bouteille d\'oxygène part vide, que faire ?','Bouton "📤 Renvoyer vers la pharmacie départementale" sur sa ligne : elle sort du stock actif et bascule dans l\'archive, consultable via "📦 Renvoyées en pharmacie" (avec remise en stock possible à son retour).'],
@@ -6296,7 +6418,7 @@ function renderCheck(vehicleId){
         const isBottle=a.regType==='O2'||a.regType==='ARI';
         const theoLiters=isBottle && a.volumeL && a.nominalPressure ? Math.round(parseFloat(a.volumeL)*parseFloat(a.nominalPressure)) : null;
         const realLiters=isBottle && a.volumeL && a.pressureBar ? Math.round(parseFloat(a.volumeL)*parseFloat(a.pressureBar)) : null;
-        const pressLow=isBottle && bottleBelowLimit(a.pressureBar,a.nominalPressure);
+        const pressLow=isBottle && bottleBelowLimit(a.pressureBar,a.nominalPressure,a.regType);
         const pressMissing=isBottle && a.pressureBar==='';
         const gasLabel=a.regType==='ARI'?'L air':'L O2';
         const dis=readOnly?' disabled':'';
@@ -6309,7 +6431,7 @@ function renderCheck(vehicleId){
             <label>Pression réelle (bar)${a.pressureLocked?' 🔒':''}</label><input type="number" inputmode="numeric" onfocus="this.select()" min="0"${dis}${a.pressureLocked?' disabled title="Pression verrouillée en Configuration — pas besoin de la remesurer"':''} style="width:78px;${pressLow?'background:#fdecec;border-color:var(--red-dark);color:var(--red-dark);font-weight:700;':''}" value="${a.pressureBar||''}" placeholder="à mesurer" data-set-check-o2pres="${emp.id}:${a.id}">
             ${a.volumeL?`<span class="article-sub">× ${a.volumeL} L</span>`:''}
             ${theoLiters!==null?`<span class="article-sub">Théorique (${a.nominalPressure} bar) : ${theoLiters} ${gasLabel}</span>`:''}
-            ${realLiters!==null?`<span class="tag" style="${pressLow?'background:var(--red-dark);':''}">≈ ${realLiters} ${gasLabel} réel${pressLow?(a.regType==='ARI'?' — ⚠ À REGONFLER (sous '+ariRefillLimit(a.nominalPressure)+' bar)':' — sous 90% du nominal'):''}</span>`:(a.volumeL?'<span class="article-sub">(pression réelle non renseignée)</span>':'<span class="article-sub">(renseigner le volume en Configurer)</span>')}
+            ${realLiters!==null?`<span class="tag" style="${pressLow?'background:var(--red-dark);':''}">≈ ${realLiters} ${gasLabel} réel${pressLow?(a.regType==='ARI'?' — ⚠ À REGONFLER (sous '+ariRefillLimit(a.nominalPressure)+' bar)':' — ⚠ SOUS LE MINIMUM (sous '+o2MinLimit(a.nominalPressure)+' bar, '+O2_MIN_PCT+' % du nominal)'):''}</span>`:(a.volumeL?'<span class="article-sub">(pression réelle non renseignée)</span>':'<span class="article-sub">(renseigner le volume en Configurer)</span>')}
             ${readOnly?'':`<button class="btn small ghost" data-pick-reserve-art-any="${emp.id}:${a.id}">🔁 Depuis réserve</button>`}</div>`:''}
           ${renderCommentsBlock(a,'art:'+emp.id+':'+a.id)}
           ${(a.photos||[]).length?`<div class="check-art-photos">${a.photos.map(p=>`<img src="${p}" style="cursor:pointer;" onclick="openPhotoLightbox(this.src)">`).join('')}</div>`:''}`;
@@ -6322,14 +6444,14 @@ function renderCheck(vehicleId){
               const subIsBottle=sub.regType==='O2'||sub.regType==='ARI';
               const subTheoLiters=subIsBottle && sub.volumeL && sub.nominalPressure ? Math.round(parseFloat(sub.volumeL)*parseFloat(sub.nominalPressure)) : null;
               const subRealLiters=subIsBottle && sub.volumeL && sub.pressureBar ? Math.round(parseFloat(sub.volumeL)*parseFloat(sub.pressureBar)) : null;
-              const subPressLow=subIsBottle && bottleBelowLimit(sub.pressureBar,sub.nominalPressure);
+              const subPressLow=subIsBottle && bottleBelowLimit(sub.pressureBar,sub.nominalPressure,sub.regType);
               const subGasLabel=sub.regType==='ARI'?'L air':'L O2';
               html+=`<div class="check-sub-row" data-sub-row="${emp.id}:${a.id}:${sub.id}"><span>${escapeHtml(sub.name)} <span class="article-sub">(qté ${sub.qty})</span> ${sub.regType?`<span class="reg-badge">${REG_TYPES[sub.regType]}</span>`:''} ${sub.expiry?`<span class="reg-badge ${subReg==='overdue'?'overdue':(subReg==='soon'?'soon':'')}">Péremption ${fmtDate(sub.expiry)}</span>`:''}${sub.wrongLocation?' <span class="reg-badge overdue">📍 Mauvais emplacement</span>':''} <button class="comment-btn ${sub.comments&&sub.comments.length?'has-comment':''}"${dis} title="Ajouter un commentaire" data-comment-sub="${emp.id}:${a.id}:${sub.id}">💬</button> <button class="comment-btn ${sub.wrongLocation?'has-comment':''}"${dis} title="${sub.wrongLocation?'Retirer le signalement':'Signaler un mauvais emplacement'}" data-wrong-loc-sub="${emp.id}:${a.id}:${sub.id}">📍</button> ${subIsBottle?'':`<button class="comment-btn ${sub.expiry?'has-comment':''}"${dis} title="${sub.expiry?'Modifier la péremption':'Ajouter une péremption (si applicable)'}" data-set-sub-expiry-btn="${emp.id}:${a.id}:${sub.id}">📅</button>`}</span>
                 ${subIsBottle?`<div class="field-inline" style="margin-top:0;width:100%;"><label>N° bouteille</label><input value="${escapeHtml(sub.invNum||'')}"${dis} style="width:120px;" placeholder="numéro" data-set-check-subbottle-num="${emp.id}:${a.id}:${sub.id}">
                 <label>Pression réelle (bar)${sub.pressureLocked?' 🔒':''}</label><input type="number" inputmode="numeric" onfocus="this.select()" min="0"${dis}${sub.pressureLocked?' disabled title="Pression verrouillée en Configuration — pas besoin de la remesurer"':''} style="width:78px;${subPressLow?'background:#fdecec;border-color:var(--red-dark);color:var(--red-dark);font-weight:700;':''}" value="${sub.pressureBar||''}" placeholder="à mesurer" data-set-check-subbottle-pres="${emp.id}:${a.id}:${sub.id}">
                 ${sub.volumeL?`<span class="article-sub">× ${sub.volumeL} L</span>`:''}
                 ${subTheoLiters!==null?`<span class="article-sub">Théorique (${sub.nominalPressure} bar) : ${subTheoLiters} ${subGasLabel}</span>`:''}
-                ${subRealLiters!==null?`<span class="tag" style="${subPressLow?'background:var(--red-dark);':''}">≈ ${subRealLiters} ${subGasLabel} réel${subPressLow?(sub.regType==='ARI'?' — ⚠ À REGONFLER (sous '+ariRefillLimit(sub.nominalPressure)+' bar)':' — sous 90% du nominal'):''}</span>`:(sub.volumeL?'<span class="article-sub">(pression réelle non renseignée)</span>':'')}
+                ${subRealLiters!==null?`<span class="tag" style="${subPressLow?'background:var(--red-dark);':''}">≈ ${subRealLiters} ${subGasLabel} réel${subPressLow?(sub.regType==='ARI'?' — ⚠ À REGONFLER (sous '+ariRefillLimit(sub.nominalPressure)+' bar)':' — ⚠ SOUS LE MINIMUM (sous '+o2MinLimit(sub.nominalPressure)+' bar, '+O2_MIN_PCT+' % du nominal)'):''}</span>`:(sub.volumeL?'<span class="article-sub">(pression réelle non renseignée)</span>':'')}
                 ${readOnly?'':`<button class="btn small ghost" data-pick-reserve-sub-any="${emp.id}:${a.id}:${sub.id}">🔁 Changer depuis réserve</button>`}</div>`:''}
                 ${sub.isContainer?`<div class="check-sub-list" style="margin-left:16px;border-left:2px dashed var(--line);padding-left:10px;">
                   ${(sub.sousArticles||[]).map(ss=>`<div class="check-sub-row" data-subsub-row="${emp.id}:${a.id}:${sub.id}:${ss.id}"><span>${escapeHtml(ss.name)} <span class="article-sub">(qté ${ss.qty})</span>${ss.wrongLocation?' <span class="reg-badge overdue">📍 Mauvais emplacement</span>':''} <button class="comment-btn ${ss.comments&&ss.comments.length?'has-comment':''}"${dis} title="Ajouter un commentaire" data-comment-subsub="${emp.id}:${a.id}:${sub.id}:${ss.id}">💬</button></span>
@@ -6846,18 +6968,36 @@ function renderTech(vehicleId){
 
 /* ---------- VOICE MODE (inventaire vocal) ---------- */
 function buildVoiceQueue(v){
+  // Chaque élément porte une clé stable (emplacement:article[:sous-article[:sous-sous-article]]) : c'est
+  // elle, et non une simple position dans la liste, qui sert à reprendre au bon endroit après une
+  // interruption (v1.61.0) — une position devient fausse dès que des sous-éléments ont été insérés.
   const queue=[];
   v.emplacements.forEach(emp=>{
     emp.articles.forEach(a=>{
       const hasChildren=isContainerArt(a);
       if(hasChildren){
-        queue.push({type:'lock',empId:emp.id,artId:a.id,label:a.name,lockLabel:a.lockLabel||'complet',comment:commentsTooltip(a)});
+        queue.push({type:'lock',key:emp.id+':'+a.id,empId:emp.id,artId:a.id,label:a.name,lockLabel:a.lockLabel||'complet',comment:commentsTooltip(a)});
       } else {
-        queue.push({type:'art',empId:emp.id,artId:a.id,label:a.name,qty:a.qty,comment:commentsTooltip(a)});
+        queue.push({type:'art',key:emp.id+':'+a.id,empId:emp.id,artId:a.id,label:a.name,qty:a.qty,comment:commentsTooltip(a)});
       }
     });
   });
   return queue;
+}
+// Sous-éléments d'un conteneur, à contrôler un par un quand il n'est PAS plombé (v1.61.0). Un sous-article
+// lui-même conteneur est détaillé à son tour (ses propres sous-articles), comme à l'écran.
+function buildVoiceSubItems(emp,a){
+  const list=[];
+  (a.sousArticles||[]).forEach(s=>{
+    if(s.isContainer && (s.sousArticles||[]).length){
+      s.sousArticles.forEach(ss=>list.push({type:'sub',key:emp.id+':'+a.id+':'+s.id+':'+ss.id,empId:emp.id,artId:a.id,subId:s.id,ssId:ss.id,
+        label:s.name+', '+ss.name,display:a.name+' › '+s.name+' › '+ss.name,qty:ss.qty,comment:commentsTooltip(ss)}));
+    } else {
+      list.push({type:'sub',key:emp.id+':'+a.id+':'+s.id,empId:emp.id,artId:a.id,subId:s.id,
+        label:s.name,display:a.name+' › '+s.name,qty:s.qty,comment:commentsTooltip(s)});
+    }
+  });
+  return list;
 }
 function normalizeTxt(s){return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();}
 function buildVehicleArticleIndex(){
@@ -6896,7 +7036,67 @@ function spellOut(text){
 }
 let voiceState=null;
 let voiceMicStream=null;
-let voiceResumeMap={};
+// Délai d'écoute (v1.61.0) : le mode vocal laisse 10 secondes pour répondre avant de redemander l'élément.
+const VOICE_WAIT_MS=10000;
+// Point de reprise (v1.61.0), mémorisé sur l'appareil par véhicule : la clé du dernier élément énoncé.
+// Survit à une fermeture du mode vocal, à un rechargement de page ou à une mise en veille du téléphone.
+const VOICE_RESUME_LS='sp-voice-resume';
+function voiceResumeGet(vehicleId){
+  try{ const m=JSON.parse(localStorage.getItem(VOICE_RESUME_LS)||'{}'); return (m&&typeof m[vehicleId]==='string')?m[vehicleId]:null; }catch(e){ return null; }
+}
+function voiceResumeSet(vehicleId,key){
+  try{
+    const m=JSON.parse(localStorage.getItem(VOICE_RESUME_LS)||'{}')||{};
+    if(key) m[vehicleId]=key; else delete m[vehicleId];
+    localStorage.setItem(VOICE_RESUME_LS,JSON.stringify(m));
+  }catch(e){}
+}
+// Véhicule « vivant » : on ne garde que l'identifiant et on retrouve l'objet actuel dans l'état à chaque
+// réponse (même parade que pour les autres fenêtres contre les références périmées).
+function voiceLiveVehicle(){
+  if(!voiceState) return null;
+  return state.vehicles.find(x=>x.id===voiceState.vehicleId)||null;
+}
+// Objet visé par un élément de la file (article, sous-article ou sous-sous-article), ou null s'il a été
+// supprimé/déplacé entre-temps par un autre appareil.
+function voiceTargetOf(item){
+  const v=voiceLiveVehicle(); if(!v) return null;
+  const emp=(v.emplacements||[]).find(e=>e.id===item.empId); if(!emp) return null;
+  const a=(emp.articles||[]).find(x=>x.id===item.artId); if(!a) return null;
+  if(!item.subId) return a;
+  const s=(a.sousArticles||[]).find(x=>x.id===item.subId); if(!s) return null;
+  if(!item.ssId) return s;
+  return (s.sousArticles||[]).find(x=>x.id===item.ssId)||null;
+}
+// Insère les sous-éléments d'un conteneur juste après lui dans la file (une seule fois).
+function voiceExpandContainer(index){
+  const item=voiceState.queue[index]; if(!item || item.expanded) return 0;
+  const v=voiceLiveVehicle(); if(!v) return 0;
+  const emp=(v.emplacements||[]).find(e=>e.id===item.empId); if(!emp) return 0;
+  const a=(emp.articles||[]).find(x=>x.id===item.artId); if(!a) return 0;
+  const subs=buildVoiceSubItems(emp,a);
+  voiceState.queue.splice(index+1,0,...subs);
+  item.expanded=true;
+  return subs.length;
+}
+// Retrouve la position de reprise à partir de la clé mémorisée. Si c'était un sous-élément, le conteneur
+// est déplié pour pouvoir reprendre exactement dessus.
+function voiceFindResumeIndex(queue,key){
+  if(!key) return 0;
+  let i=queue.findIndex(it=>it.key===key);
+  if(i>=0) return i;
+  const parts=key.split(':');
+  if(parts.length>=3){
+    const li=queue.findIndex(it=>it.key===parts[0]+':'+parts[1]);
+    if(li>=0){
+      voiceExpandContainer(li);
+      i=queue.findIndex(it=>it.key===key);
+      return i>=0 ? i : li;
+    }
+  }
+  return 0;
+}
+function voiceInvalidateListen(){ if(voiceState) voiceState.listenToken=(voiceState.listenToken||0)+1; }
 async function startVoiceInventory(v){
   requireChecker({vehicleId:v.id,type:'material'},()=>startVoiceInventoryReal(v));
 }
@@ -6906,9 +7106,10 @@ async function startVoiceInventoryReal(v){
   if(!SR){alert('La reconnaissance vocale n\'est pas disponible sur ce navigateur (nécessite Chrome + autorisation micro).');return;}
   const queue=buildVoiceQueue(v);
   if(!queue.length){alert('Aucun item à contrôler pour cet engin.');return;}
-  let startIndex=voiceResumeMap[v.id]||0;
+  voiceState={vehicleId:v.id,vehicleName:v.name,queue,index:0,recognition:new SR(),listenToken:0};
+  let startIndex=voiceFindResumeIndex(queue,voiceResumeGet(v.id));
   if(startIndex>=queue.length) startIndex=0;
-  voiceState={v,queue,index:startIndex,recognition:new SR()};
+  voiceState.index=startIndex;
   voiceState.recognition.lang='fr-FR'; voiceState.recognition.continuous=false; voiceState.recognition.interimResults=false;
   const overlay=document.createElement('div'); overlay.className='voice-overlay'; overlay.id='voiceOverlay';
   overlay.innerHTML=`<button class="voice-close" id="voiceClose">✕</button>
@@ -6924,23 +7125,41 @@ async function startVoiceInventoryReal(v){
   document.getElementById('voiceReactivateBtn').addEventListener('click',voiceReactivate);
   document.getElementById('voiceMic').addEventListener('click',voiceReactivate);
   const rb=document.getElementById('voiceRestartBtn');
-  if(rb)rb.addEventListener('click',()=>{voiceState.index=0;voiceResumeMap[v.id]=0;rb.remove();voiceAskCurrentItem();});
+  if(rb)rb.addEventListener('click',()=>{
+    voiceInvalidateListen();
+    try{ voiceState.recognition.abort(); }catch(e){}
+    voiceState.queue=buildVoiceQueue(voiceLiveVehicle()||v); voiceState.index=0; voiceResumeSet(v.id,null); rb.remove(); voiceAskCurrentItem();
+  });
   voiceAskCurrentItem();
 }
 function stopVoiceInventory(){
   if(voiceState){
+    voiceInvalidateListen();
     try{voiceState.recognition.abort();}catch(e){}
     speechSynthesis.cancel();
-    // Mémorise la position pour reprendre au même endroit au prochain lancement sur ce véhicule.
-    if(voiceState.index<voiceState.queue.length) voiceResumeMap[voiceState.v.id]=voiceState.index;
-    else voiceResumeMap[voiceState.v.id]=0;
+    // Mémorise l'élément en cours pour reprendre au même endroit au prochain lancement sur ce véhicule.
+    const cur=voiceState.queue[voiceState.index];
+    voiceResumeSet(voiceState.vehicleId, cur?cur.key:null);
   }
   const ov=document.getElementById('voiceOverlay'); if(ov)ov.remove();
   voiceState=null; render();
   // Le flux micro (voiceMicStream) reste ouvert volontairement pour ne pas redemander l'autorisation
-
   // au prochain lancement du mode vocal dans cette même session de navigation.
 }
+// Interruption par le téléphone (écran verrouillé, appel, passage à une autre appli) : on coupe proprement
+// l'écoute et la voix, puis au retour on reprend sur l'élément en cours, sans rien perdre (v1.61.0).
+document.addEventListener('visibilitychange',()=>{
+  if(!voiceState) return;
+  if(document.hidden){
+    voiceState.pausedHidden=true;
+    voiceInvalidateListen();
+    try{ voiceState.recognition.abort(); }catch(e){}
+    try{ speechSynthesis.cancel(); }catch(e){}
+  } else if(voiceState.pausedHidden){
+    voiceState.pausedHidden=false;
+    voiceReactivate();
+  }
+});
 let preferredVoiceURI=localStorage.getItem('sp-voice-uri')||'';
 function pickBestFrenchVoice(){
   const voices=speechSynthesis.getVoices().filter(v=>v.lang&&v.lang.toLowerCase().startsWith('fr'));
@@ -6951,11 +7170,18 @@ function pickBestFrenchVoice(){
   const network=voices.find(v=>!v.localService && /google|microsoft|online|natural/i.test(v.name));
   return network || voices.find(v=>!v.localService) || voices[0];
 }
+let speakSeq=0;
 function speak(text,cb){
+  // Seule la DERNIÈRE phrase demandée peut déclencher la suite (v1.61.0) : une phrase coupée (micro
+  // réactivé, mise en veille…) ne relance plus d'écoute en retard sur un autre élément.
+  const my=++speakSeq;
   speechSynthesis.cancel();
   const u=new SpeechSynthesisUtterance(text); u.lang='fr-FR'; u.rate=parseFloat(localStorage.getItem('sp-voice-rate')||'0.98'); u.pitch=1.0;
   const voice=pickBestFrenchVoice(); if(voice) u.voice=voice;
-  u.onend=()=>{if(cb)cb();};
+  let done=false;
+  const next=()=>{ if(done||my!==speakSeq) return; done=true; if(cb)cb(); };
+  u.onend=next;
+  u.onerror=(e)=>{ const er=e&&e.error; if(er!=='interrupted'&&er!=='canceled') next(); }; // voix en erreur : on continue quand même
   speechSynthesis.speak(u);
 }
 if('speechSynthesis' in window){
@@ -6998,27 +7224,50 @@ function openVoicePickerModal(){
   });
 }
 function listenOnce(onResult){
+  if(!voiceState) return;
+  // Chaque écoute a un numéro : une écoute annulée (réactivation du micro, fermeture, mise en veille)
+  // ne peut plus jamais déclencher de réponse en retard.
+  voiceInvalidateListen();
+  const token=voiceState.listenToken;
+  const alive=()=>voiceState && voiceState.listenToken===token;
   const mic=document.getElementById('voiceMic'); if(mic)mic.classList.add('listening');
   const rec=voiceState.recognition;
-  let settled=false;
-  const finish=(val)=>{ if(settled)return; settled=true; if(mic)mic.classList.remove('listening'); onResult(val); };
-  rec.onresult=(e)=>{const txt=e.results[0][0].transcript.toLowerCase().trim(); finish(txt);};
-  rec.onerror=()=>{ finish(''); };
-  // Avant, "onend" ne faisait que retirer l'animation du micro sans jamais appeler "finish" si ni
-  // "onresult" ni "onerror" ne s'étaient déclenchés avant lui (ça arrive, selon le navigateur, en cas de
-  // silence prolongé ou de coupure réseau) — le mode vocal restait alors bloqué indéfiniment sur le même
-  // item, sans message d'erreur et sans rien demander, ce qui ressemblait à un mode vocal qui "s'arrête".
-  // On s'assure maintenant que la séquence continue TOUJOURS, quoi qu'il arrive.
-  rec.onend=()=>{ if(mic)mic.classList.remove('listening'); finish(''); };
+  const deadline=Date.now()+VOICE_WAIT_MS;
+  let settled=false, fatal=false, hardTimer=null;
+  const finish=(val)=>{
+    if(settled)return; settled=true; if(hardTimer)clearTimeout(hardTimer);
+    if(mic)mic.classList.remove('listening');
+    if(!alive()) return;
+    onResult(val);
+  };
+  rec.onresult=(e)=>{
+    const txt=(e.results&&e.results[0]&&e.results[0][0]&&e.results[0][0].transcript||'').toLowerCase().trim();
+    if(txt) finish(txt);
+  };
+  rec.onerror=(e)=>{
+    const err=e&&e.error;
+    // Micro refusé ou indisponible : inutile d'insister, on rend la main tout de suite.
+    if(err==='not-allowed'||err==='service-not-allowed'||err==='audio-capture') fatal=true;
+  };
+  // Le navigateur coupe souvent l'écoute au bout de quelques secondes de silence. Tant que les 10 secondes
+  // ne sont pas écoulées, on relance l'écoute discrètement au lieu de redemander l'élément trop tôt.
+  // Comme avant, la séquence continue TOUJOURS : à défaut de réponse, on rend une réponse vide.
+  rec.onend=()=>{
+    if(settled) return;
+    if(!alive()){ settled=true; if(mic)mic.classList.remove('listening'); if(hardTimer)clearTimeout(hardTimer); return; }
+    if(!fatal && !document.hidden && Date.now()<deadline) setTimeout(()=>{ if(!settled && alive()) tryStart(false); },150);
+    else finish('');
+  };
   const tryStart=(retried)=>{
     try{ rec.start(); }
     catch(err){
-      // La reconnaissance précédente n'a pas fini de se fermer : on retente une fois après une courte pause
-      // au lieu de considérer silencieusement que rien n'a été dit.
-      if(!retried) setTimeout(()=>tryStart(true),300);
+      // La reconnaissance précédente n'a pas fini de se fermer : on retente une fois après une courte pause.
+      if(!retried) setTimeout(()=>{ if(!settled && alive()) tryStart(true); },300);
       else finish('');
     }
   };
+  // Filet de sécurité : quoi qu'il arrive côté navigateur, l'écoute se termine peu après les 10 secondes.
+  hardTimer=setTimeout(()=>{ if(!settled){ try{ rec.abort(); }catch(e){} finish(''); } },VOICE_WAIT_MS+4000);
   tryStart(false);
 }
 // Bouton de secours, toujours visible dans l'overlay vocal : si le micro semble bloqué (plus de réaction
@@ -7026,30 +7275,39 @@ function listenOnce(onResult){
 // perdre sa progression — pas besoin de sortir et de rouvrir.
 function voiceReactivate(){
   if(!voiceState)return;
+  voiceInvalidateListen();
   try{ voiceState.recognition.abort(); }catch(e){}
   speechSynthesis.cancel();
   resetVoiceRecognition();
   voiceAskCurrentItem();
 }
-function voiceAskCurrentItem(){
+function voiceLockWord(item){ return /plomb/i.test(item.lockLabel||'') ? 'plombé' : 'complet'; }
+function voiceItemPhrase(item){
+  let phrase=spellOut(item.label)+'.';
+  if(item.type==='lock') phrase+=' Est-il '+voiceLockWord(item)+' ?';
+  if(item.comment) phrase+=' Commentaire existant : '+item.comment+'.';
+  return phrase;
+}
+function voiceAskCurrentItem(repeat){
   if(!voiceState)return;
+  if(document.hidden){ voiceState.pausedHidden=true; return; } // reprise automatique au retour au premier plan
   const{queue,index}=voiceState;
   if(index>=queue.length){
     document.getElementById('voiceItemText').textContent='Inventaire terminé.';
     document.getElementById('voiceHint').textContent='';
     document.getElementById('voiceProgress').textContent=queue.length+' / '+queue.length;
-    voiceResumeMap[voiceState.v.id]=0;
-    speak('Inventaire terminé pour '+spellOut(voiceState.v.name)+'.',()=>{setTimeout(stopVoiceInventory,1800);});
+    voiceResumeSet(voiceState.vehicleId,null);
+    speak('Inventaire terminé pour '+spellOut(voiceState.vehicleName)+'.',()=>{setTimeout(stopVoiceInventory,1800);});
     return;
   }
   const item=queue[index];
-  document.getElementById('voiceItemText').textContent=item.label+(item.qty?' (qté '+item.qty+')':'');
+  voiceResumeSet(voiceState.vehicleId,item.key); // point de reprise tenu à jour en continu
+  document.getElementById('voiceItemText').textContent=(item.display||item.label)+(item.qty?' (qté '+item.qty+')':'');
   document.getElementById('voiceProgress').textContent=(index+1)+' / '+queue.length;
   document.getElementById('voiceHint').textContent = item.type==='lock'
-    ? 'Réponses possibles : Oui (= '+item.lockLabel+') · Manquant · Périmé · H.S.'
+    ? 'Est-il '+voiceLockWord(item)+' ? Oui · Non (contrôle du contenu) · Manquant · Périmé · H.S.'
     : 'Réponses possibles : Oui (conforme) · Manquant · Périmé · H.S.';
-  let phrase=spellOut(item.label)+'.';
-  if(item.comment) phrase+=' Commentaire existant : '+item.comment+'.';
+  const phrase=(repeat?'Je répète. ':'')+voiceItemPhrase(item);
   speak(phrase,()=>listenOnce(txt=>voiceHandleAnswer(txt)));
 }
 function resetVoiceRecognition(){
@@ -7061,40 +7319,77 @@ function resetVoiceRecognition(){
   voiceState.recognition=new SR();
   voiceState.recognition.lang='fr-FR'; voiceState.recognition.continuous=false; voiceState.recognition.interimResults=false;
 }
+// Réponse à « est-il plombé ? » : « non » / « pas plombé » = non plombé (on contrôle le contenu), à
+// distinguer de « manquant » (le sac lui-même est absent).
+function classifyLockAnswer(txt){
+  const n=normalizeTxt(txt);
+  if(/\b(manquant|absent|manque)\b/.test(n)) return 'manquant';
+  if(/\b(perime|perimee)\b/.test(n)) return 'perime';
+  if(/\b(hs|hors\s?service)\b/.test(n)) return 'hs';
+  if(/\b(non|negatif|pas)\b/.test(n)) return 'non';
+  if(/\b(oui|ok|conforme|positif|plombe|complet|present)\b/.test(n)) return 'ok';
+  return null;
+}
+function voiceNext(){ if(!voiceState)return; voiceState.index++; voiceAskCurrentItem(); }
 async function voiceHandleAnswer(txt){
   if(!voiceState)return;
   const item=voiceState.queue[voiceState.index];
-  const v=voiceState.v;
-  const answer=classifyAnswer(txt);
+  if(!item){ voiceAskCurrentItem(); return; }
+  if(!txt||!txt.trim()){
+    // Aucune réponse pendant 10 secondes : on redemande l'élément énoncé.
+    voiceState.silenceCount=(voiceState.silenceCount||0)+1;
+    if(voiceState.silenceCount>=2){ voiceState.silenceCount=0; resetVoiceRecognition(); }
+    voiceAskCurrentItem(true);
+    return;
+  }
+  voiceState.silenceCount=0;
+  const answer=item.type==='lock' ? classifyLockAnswer(txt) : classifyAnswer(txt);
   if(!answer){
     voiceState.failCount=(voiceState.failCount||0)+1;
     if(voiceState.failCount>=2){
       voiceState.failCount=0;
       resetVoiceRecognition();
-      speak('Je relance le micro. Répète : conforme, manquant, périmé, ou H.S.',()=>listenOnce(t=>voiceHandleAnswer(t)));
+      speak(item.type==='lock'
+        ? 'Je relance le micro. Réponds : oui, non, manquant, périmé, ou H.S.'
+        : 'Je relance le micro. Répète : conforme, manquant, périmé, ou H.S.',()=>listenOnce(t=>voiceHandleAnswer(t)));
     } else {
       speak('Je n\'ai pas compris.',()=>listenOnce(t=>voiceHandleAnswer(t)));
     }
     return;
   }
   voiceState.failCount=0;
+  const target=voiceTargetOf(item);
+  if(!target){
+    // Élément supprimé ou déplacé entre-temps (autre appareil) : on n'écrit rien et on passe au suivant.
+    speak('Cet élément n\'existe plus, je passe au suivant.',voiceNext);
+    return;
+  }
   let needsComment=false;
   if(item.type==='lock'){
-    const{a}=findArt(v,item.empId+':'+item.artId);
-    if(answer==='ok'){ a.locked=true; a.lastCheck=todayStr(); a.checkedBy=currentCheckerLabel('Vocal'); }
-    else{ a.locked=false; addComment(a,ANSWER_LABEL[answer]); needsComment=true; }
+    if(answer==='ok'){ target.locked=true; target.lastCheck=todayStr(); target.checkedBy=currentCheckerLabel('Vocal'); }
+    else if(answer==='non'){
+      // Non plombé : on contrôle chaque sous-élément, un par un, juste après.
+      target.locked=false;
+      await saveState();
+      render();
+      const n=voiceExpandContainer(voiceState.index);
+      if(n>0) speak('Non '+voiceLockWord(item)+'. Contrôle du contenu, '+n+' élément'+(n>1?'s':'')+'.',voiceNext);
+      else speak('Non '+voiceLockWord(item)+', aucun sous-élément enregistré.',voiceNext);
+      return;
+    }
+    else{ target.locked=false; addComment(target,ANSWER_LABEL[answer]); needsComment=true; }
   } else {
-    const{a}=findArt(v,item.empId+':'+item.artId);
-    a.status=answer; a.lastCheck=todayStr(); a.checkedBy=currentCheckerLabel('Vocal');
-    if(answer==='manquant'||answer==='perime'){ if(!a.qtyMissing) a.qtyMissing=a.qty; } else { a.qtyMissing=0; }
+    target.status=answer; target.lastCheck=todayStr(); target.checkedBy=currentCheckerLabel('Vocal');
+    if(answer==='manquant'||answer==='perime'){ if(!target.qtyMissing) target.qtyMissing=target.qty; } else { target.qtyMissing=0; }
     needsComment = (answer==='manquant'||answer==='perime'||answer==='hs');
   }
   await saveState();
   render(); // met à jour l'écran de vérification en direct, visible sous l'overlay vocal transparent
+  if(!voiceState) return;
   if(needsComment){
     speak('Voulez-vous ajouter un commentaire ?',()=>listenOnce(t=>voiceHandleCommentChoice(t)));
   } else {
-    voiceState.index++; voiceAskCurrentItem();
+    voiceNext();
   }
 }
 function voiceHandleCommentChoice(txt){
@@ -7104,7 +7399,7 @@ function voiceHandleCommentChoice(txt){
   if(yes){
     speak('Dictez votre commentaire.',()=>listenOnce(t=>voiceHandleCommentText(t)));
   } else {
-    voiceState.index++; voiceAskCurrentItem();
+    voiceNext();
   }
 }
 async function voiceHandleCommentText(txt,retryCount){
@@ -7112,19 +7407,20 @@ async function voiceHandleCommentText(txt,retryCount){
   retryCount=retryCount||0;
   if(!txt||!txt.trim()){
     if(retryCount>=2){
-      speak('Je n\'ai toujours pas entendu, on continue sans commentaire.',()=>{voiceState.index++; voiceAskCurrentItem();});
+      speak('Je n\'ai toujours pas entendu, on continue sans commentaire.',voiceNext);
       return;
     }
     speak('Je n\'ai rien entendu, redis ton commentaire.',()=>listenOnce(t=>voiceHandleCommentText(t,retryCount+1)));
     return;
   }
   const item=voiceState.queue[voiceState.index];
-  const v=voiceState.v;
-  const{a}=findArt(v,item.empId+':'+item.artId);
-  addComment(a,txt);
+  const target=item?voiceTargetOf(item):null;
+  if(!target){ speak('Cet élément n\'existe plus, commentaire non enregistré.',voiceNext); return; }
+  addComment(target,txt);
   await saveState();
   render();
-  speak('Commentaire enregistré.',()=>{voiceState.index++; voiceAskCurrentItem();});
+  if(!voiceState) return;
+  speak('Commentaire enregistré.',voiceNext);
 }
 
 /* ---------- Retour d'intervention (déclaration rapide sans refaire tout l'inventaire) ---------- */
