@@ -600,21 +600,28 @@ const CIS_REGISTRY_DEFAULTS=[
   {id:'doullens', name:'CS Doullens', code:'80DO1'},
   {id:'flixecourt', name:'CS Flixecourt', code:'80FL1'},
   {id:'roye', name:'CS Roye', code:'80RY1'},
-  {id:'valdesomme', name:'CS Val de Somme', code:'80VS1'}
+  {id:'valdesomme', name:'CS Val de Somme', code:'80VS1'},
+  // Ajoutés en v1.61.1, même principe.
+  {id:'nesle', name:'CS Nesle', code:'80NE1'},
+  {id:'poixdepicardie', name:'CS Poix-de-Picardie', code:'80PO1'}
 ];
 const CATELAS_NEW_NAME='CSP Amiens-Catelas';
-const CIS_ADDED_V160=['amiensferry','amienspoulainville','abbeville','doullens','flixecourt','roye','valdesomme'];
+const CIS_ADDED_V160=['amiensferry','amienspoulainville','abbeville','doullens','flixecourt','roye','valdesomme','nesle','poixdepicardie']; // centres ajoutés automatiquement au registre partagé (v1.60.0 et v1.61.1)
 function cisNameKey(name){ return normalizeTxt(name).replace(/^(csp|cs)\s+/,'').replace(/[^a-z0-9]+/g,''); }
 // Mise à jour du registre partagé (v1.60.0), idempotente : renomme Catelas (même id, même code) et ajoute
 // les nouveaux centres absents. Un centre n'est jamais ajouté en double : on le considère déjà présent si
 // son identifiant, son code OU son nom (sans « CSP »/« CS », accents et tirets ignorés) existe déjà.
 // Aucun centre existant n'est supprimé ni modifié, à part le nom affiché de Catelas.
-function migrateCisRegistry(list){
+function migrateCisRegistry(list,removed){
+  // removed : centres retirés volontairement (v1.62.0) — jamais rajoutés. null = liste inconnue (lecture
+  // impossible) : par prudence, aucun ajout automatique dans ce cas.
   let changed=false;
   list.forEach(c=>{
     if(c && c.id==='catelat' && c.name!==CATELAS_NEW_NAME && /^\s*(csp\s+)?catela[st]\s*$/i.test(c.name||'')){ c.name=CATELAS_NEW_NAME; changed=true; }
   });
+  if(!Array.isArray(removed)) return changed;
   CIS_REGISTRY_DEFAULTS.filter(d=>CIS_ADDED_V160.indexOf(d.id)>=0).forEach(d=>{
+    if(removed.some(r=>r.id===d.id || String(r.code||'').toUpperCase()===d.code)) return;
     const exists=list.some(c=>c && (c.id===d.id || String(c.code||'').toUpperCase()===d.code || cisNameKey(c.name)===cisNameKey(d.name)));
     if(!exists){ list.push({id:d.id,name:d.name,code:d.code}); changed=true; }
   });
@@ -622,6 +629,7 @@ function migrateCisRegistry(list){
 }
 let CIS_REGISTRY=CIS_REGISTRY_DEFAULTS.map(c=>Object.assign({},c));
 const CIS_REGISTRY_KEY='sp-inv-centers-registry';
+let registryLoadedFromServer=false;
 async function loadCisRegistry(){
   // Le registre des centres est maintenant partagé (un seul document, commun à tous les centres) —
   // ça permet d'ajouter un centre depuis l'appli, sans jamais avoir à modifier le code. La liste
@@ -638,7 +646,9 @@ async function loadCisRegistry(){
         // (v1.60.0) : le nom affiché devient « CSP Amiens-Catelas » (id et code inchangés) et les nouveaux
         // centres sont ajoutés — voir migrateCisRegistry. L'écriture relit le registre du serveur dans une
         // transaction, pour ne jamais écraser un centre ajouté au même moment depuis un autre appareil.
-        const fixed=migrateCisRegistry(remote);
+        let removedCenters=null;
+        try{ removedCenters=await readRemovedCenters(); }catch(e){ removedCenters=null; }
+        const fixed=migrateCisRegistry(remote,removedCenters);
         CIS_REGISTRY=remote;
         if(fixed){
           try{
@@ -646,7 +656,7 @@ async function loadCisRegistry(){
               const finalValue=await window.storage.transact(CIS_REGISTRY_KEY, async(cur)=>{
                 let fresh=null; try{ fresh=cur?JSON.parse(cur):null; }catch(e){ fresh=null; }
                 if(!Array.isArray(fresh) || !fresh.length) return undefined; // registre illisible : on n'écrit rien
-                return migrateCisRegistry(fresh) ? JSON.stringify(fresh) : undefined;
+                return migrateCisRegistry(fresh,removedCenters) ? JSON.stringify(fresh) : undefined;
               });
               try{ const f=finalValue?JSON.parse(finalValue):null; if(Array.isArray(f)&&f.length) CIS_REGISTRY=f; }catch(e){}
             } else {
@@ -654,6 +664,7 @@ async function loadCisRegistry(){
             }
           }catch(e){ console.error('Mise à jour du registre des centres impossible :',e); }
         }
+        registryLoadedFromServer=true;
       }
     } else {
       // Premier lancement du registre partagé : on l'initialise avec la liste de secours actuelle.
@@ -661,6 +672,129 @@ async function loadCisRegistry(){
     }
   }catch(e){ console.error('Registre des centres inaccessible, liste de secours utilisée :',e); }
   updateMenuStaticLabels();
+}
+// ---- Suppression d'un centre créé par erreur (v1.62.0) ----
+// Principe : « supprimer » un centre le RETIRE DE LA LISTE des centres, mais ses données ne sont JAMAIS
+// effacées du serveur (le document du centre et ses sauvegardes quotidiennes restent en place). Rien ne
+// peut donc être perdu : une copie est en plus téléchargée sur l'appareil au moment de la suppression.
+//  - Les 4 centres réels de la phase pilote ne sont pas supprimables depuis l'appli.
+//  - Le centre actuellement ouvert n'est pas supprimable (il faut d'abord changer de centre).
+//  - Confirmation obligatoire en recopiant le nom exact du centre.
+//  - Les centres retirés sont notés dans un petit document à part ("sp-inv-centers-removed") pour que
+//    l'ajout automatique des nouveaux centres (voir migrateCisRegistry) ne les fasse jamais réapparaître.
+const PROTECTED_CENTER_IDS=['peronne','catelat','moreuil','roisel'];
+const CIS_REMOVED_KEY='sp-inv-centers-removed';
+function parseRemovedCenters(value){
+  if(!value) return [];
+  try{ const a=JSON.parse(value); return Array.isArray(a)?a.filter(x=>x&&typeof x.id==='string'):[]; }catch(e){ return []; }
+}
+async function readRemovedCenters(){
+  const res=await window.storage.get(CIS_REMOVED_KEY,true);
+  return parseRemovedCenters(res&&res.value);
+}
+async function openDeleteCisModal(){
+  const currentId=getSelectedCenterId();
+  const candidates=CIS_REGISTRY.filter(c=>c && PROTECTED_CENTER_IDS.indexOf(c.id)<0 && c.id!==currentId);
+  const overlay=document.createElement('div'); overlay.className='overlay';
+  overlay.innerHTML=`<div class="modal"><h3>🗑 Supprimer un centre créé par erreur</h3>
+    <p style="font-size:12.5px;color:var(--muted);">Le centre est retiré de la liste des centres. Ses données ne sont <b>pas effacées</b> du serveur, et une copie est téléchargée sur cet appareil. Les 4 centres de la phase pilote et le centre actuellement ouvert ne peuvent pas être supprimés.</p>
+    ${candidates.length?`<div class="field"><label>Centre à supprimer</label><select id="delCisSelect"><option value="">— Choisir —</option>${candidates.map(c=>`<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)} (${escapeHtml(c.code||'')})</option>`).join('')}</select></div>
+    <div id="delCisInfo" style="font-size:12.5px;margin:6px 0;"></div>
+    <div class="field" id="delCisConfirmField" style="display:none;"><label>Pour confirmer, recopie exactement le nom du centre</label><input id="delCisName" autocomplete="off"></div>`
+    :'<p style="font-size:12.5px;">Aucun centre ne peut être supprimé.</p>'}
+    <div class="modal-actions"><button class="btn ghost" id="delCisCancel">Annuler</button>${candidates.length?'<button class="btn primary" id="delCisConfirm" disabled style="background:var(--red-dark);">Supprimer le centre</button>':''}</div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  document.getElementById('delCisCancel').addEventListener('click',()=>overlay.remove());
+  if(!candidates.length) return;
+  const sel=document.getElementById('delCisSelect'), info=document.getElementById('delCisInfo');
+  const field=document.getElementById('delCisConfirmField'), nameInput=document.getElementById('delCisName');
+  const btn=document.getElementById('delCisConfirm');
+  let checked=null; // {center, value, vehicles, reserves} — contenu relu sur le serveur
+  const refreshBtn=()=>{ btn.disabled=!(checked && nameInput.value.trim()===checked.center.name); };
+  sel.addEventListener('change',async()=>{
+    checked=null; field.style.display='none'; nameInput.value=''; refreshBtn();
+    const c=CIS_REGISTRY.find(x=>x.id===sel.value); if(!c){ info.innerHTML=''; return; }
+    info.innerHTML='<span style="color:var(--muted);">Vérification du contenu de ce centre…</span>';
+    try{
+      const res=await window.storage.get(storageKeyForCenter(c.id),true,true); // lecture serveur, pas le cache
+      if(sel.value!==c.id) return;
+      let vehicles=0, reserves=0;
+      if(res&&res.value){
+        const d=JSON.parse(res.value);
+        vehicles=Array.isArray(d.vehicles)?d.vehicles.length:0;
+        reserves=d.reserves?Object.values(d.reserves).reduce((n,a)=>n+(Array.isArray(a)?a.length:0),0):0;
+      }
+      checked={center:c, value:res&&res.value?res.value:null, vehicles, reserves};
+      info.innerHTML=(vehicles||reserves)
+        ? `<div class="comment-text" style="border-color:var(--red-dark);color:var(--red-dark);">⚠ Ce centre <b>contient des données</b> : ${vehicles} véhicule(s) et ${reserves} article(s) de réserve. Elles resteront sur le serveur et une copie sera téléchargée, mais plus personne ne pourra ouvrir ce centre depuis l'appli.</div>`
+        : '<span style="color:var(--green-dark);">Ce centre ne contient aucune donnée.</span>';
+      field.style.display='';
+    }catch(e){
+      info.innerHTML='<span style="color:var(--red-dark);">Impossible de vérifier le contenu de ce centre (connexion ?). Suppression bloquée par sécurité.</span>';
+    }
+  });
+  nameInput.addEventListener('input',refreshBtn);
+  btn.addEventListener('click',()=>requireAdmin(async()=>{
+    if(!checked || nameInput.value.trim()!==checked.center.name) return;
+    const c=checked.center;
+    if(PROTECTED_CENTER_IDS.indexOf(c.id)>=0 || c.id===getSelectedCenterId()) return;
+    if(!confirm('Supprimer définitivement « '+c.name+' » de la liste des centres ?')) return;
+    btn.disabled=true;
+    // 1) Copie sur l'appareil AVANT toute modification.
+    if(checked.value){
+      try{ downloadFile('centre_supprime_'+c.id+'_'+todayStr()+'.json',checked.value,'application/json'); }catch(e){}
+    }
+    try{
+      // 2) Note le centre comme retiré (pour qu'il ne soit jamais rajouté automatiquement).
+      const entry={id:c.id,name:c.name,code:c.code||'',removedAt:new Date().toISOString()};
+      if(window.storage.transact){
+        await window.storage.transact(CIS_REMOVED_KEY, async(cur)=>{
+          const list=parseRemovedCenters(cur); if(list.some(x=>x.id===c.id)) return undefined;
+          list.push(entry); return JSON.stringify(list);
+        });
+      } else {
+        const list=await readRemovedCenters(); if(!list.some(x=>x.id===c.id)){ list.push(entry); await window.storage.set(CIS_REMOVED_KEY,JSON.stringify(list),true); }
+      }
+      // 3) Retire le centre du registre partagé, relu sur le serveur (aucun autre centre n'est touché).
+      let finalList=null;
+      if(window.storage.transact){
+        const v=await window.storage.transact(CIS_REGISTRY_KEY, async(cur)=>{
+          let fresh=null; try{ fresh=cur?JSON.parse(cur):null; }catch(e){ fresh=null; }
+          if(!Array.isArray(fresh) || !fresh.length) throw new Error('registre des centres illisible');
+          const kept=fresh.filter(x=>!(x && x.id===c.id));
+          if(!kept.length) throw new Error('le registre deviendrait vide');
+          return kept.length===fresh.length ? undefined : JSON.stringify(kept);
+        });
+        try{ finalList=JSON.parse(v); }catch(e){}
+      } else {
+        const res=await window.storage.get(CIS_REGISTRY_KEY,true);
+        const fresh=res&&res.value?JSON.parse(res.value):null;
+        if(!Array.isArray(fresh)||!fresh.length) throw new Error('registre des centres illisible');
+        finalList=fresh.filter(x=>!(x && x.id===c.id));
+        if(!finalList.length) throw new Error('le registre deviendrait vide');
+        await window.storage.set(CIS_REGISTRY_KEY,JSON.stringify(finalList),true);
+      }
+      if(Array.isArray(finalList)&&finalList.length) CIS_REGISTRY=finalList; else CIS_REGISTRY=CIS_REGISTRY.filter(x=>x.id!==c.id);
+      overlay.remove();
+      alert('« '+c.name+' » a été retiré de la liste des centres.'+(checked.value?' Ses données restent sur le serveur et une copie a été téléchargée.':''));
+    }catch(e){
+      console.error(e);
+      btn.disabled=false;
+      alert('Suppression impossible : '+e.message+'. Aucun centre n\'a été retiré.');
+    }
+  }));
+}
+// Appareil resté sur un centre qui a été retiré de la liste : on le signale et on fait choisir un centre,
+// au lieu de continuer à afficher le nom d'un autre centre au-dessus des données de celui-ci.
+async function checkSelectedCenterStillExists(){
+  const id=localStorage.getItem('sp-selected-center');
+  if(!id || CIS_REGISTRY.some(c=>c.id===id)) return;
+  try{ if(typeof flushSave==='function' && (pendingSaveTimer||pendingSaveMaxTimer)) await flushSave(); }catch(e){}
+  alert('Le centre ouvert sur cet appareil a été retiré de la liste des centres. Choisis ton centre pour continuer (ses données ne sont pas effacées).');
+  localStorage.setItem('sp-selected-center-removed',id);
+  localStorage.removeItem('sp-selected-center');
+  location.reload();
 }
 function hasAnyPriorAppData(){
   // Un appareil ayant déjà utilisé l'appli — sous n'importe quelle version — a forcément déjà écrit au
@@ -676,6 +810,7 @@ function hasAnyPriorAppData(){
 function getSelectedCenterId(){
   const stored=localStorage.getItem('sp-selected-center');
   if(stored) return stored;
+  if(localStorage.getItem('sp-selected-center-removed')) return null; // centre retiré : on fait choisir (v1.62.0)
   if(hasAnyPriorAppData()){
     // Appareil "historique" : a déjà utilisé l'appli avant l'existence du sélecteur de centre (donc
     // forcément pour Péronne, seul centre existant à l'époque) — rattachement automatique, sans code,
@@ -1313,6 +1448,7 @@ async function loadState(){
     }
     if(res&&res.value){
       state=JSON.parse(res.value);
+      dailyBackupSource=res.value; // v1.63.0 : la sauvegarde du jour copie l'état AVANT la remise à zéro du cycle
       // La référence de comparaison (lastSyncedState) sera fixée PLUS BAS, une fois la remise à zéro
       // automatique éventuelle appliquée — la capturer ici, avant, créait une faille : une sauvegarde
       // ultérieure pouvait comparer un état "après remise à zéro" à une référence "avant", les jugeait
@@ -1406,6 +1542,7 @@ function openEmptyCenterConfirmModal(){
 //    restent consultables (téléchargement seulement) depuis la fenêtre des sauvegardes.
 const DAILY_BACKUP_PREFIX_LEGACY='sp-inv-daily-backup-';
 const DAILY_BACKUP_KEEP_DAYS=30;
+let dailyBackupSource=null; // contenu exact lu sur le serveur au chargement (avant remise à zéro automatique)
 const BACKUP_CENTER_ID=getSelectedCenterId()||'peronne'; // même centre que STORAGE_KEY
 const DAILY_BACKUP_PREFIX='sp-inv-backup-day-'+BACKUP_CENTER_ID+'-';
 const DAILY_BACKUP_INDEX_KEY='sp-inv-backup-index-'+BACKUP_CENTER_ID;
@@ -1454,7 +1591,11 @@ async function maybeCreateDailyBackup(){
   catch(e){ return; } // en cas de doute sur l'état existant, on ne force pas une écriture
   if(dates.indexOf(today)>=0) return; // déjà fait aujourd'hui pour ce centre
   try{
-    await window.storage.set(DAILY_BACKUP_PREFIX+today,JSON.stringify(state),true);
+    // v1.63.0 : on copie le contenu tel qu'il était sur le serveur à l'ouverture, avant la remise à zéro
+    // automatique du nouveau cycle — sinon l'inventaire terminé la veille (statuts « conforme », pressions)
+    // était déjà effacé dans la copie. À défaut, l'état actuel comme avant.
+    const payload=(typeof dailyBackupSource==='string' && dailyBackupSource) ? dailyBackupSource : JSON.stringify(state);
+    await window.storage.set(DAILY_BACKUP_PREFIX+today,payload,true);
   }catch(e){ console.error('Sauvegarde quotidienne automatique échouée :',e); return; }
   try{
     const {removed}=await addDateToBackupIndex(today);
@@ -1941,12 +2082,14 @@ function openSwitchCisModal(){
     <div class="field"><label>Code du centre</label><input id="switchCisCode" placeholder="Code fourni pour ce centre" autocomplete="off"></div>
     <div class="modal-actions"><button class="btn ghost" id="switchCisCancel">Annuler</button><button class="btn primary" id="switchCisConfirm">Changer de centre</button></div>
     <div style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px;text-align:right;">
+      <button class="btn ghost small" id="delCisBtn">🗑 Supprimer un centre</button>
       <button class="btn ghost small" id="addCisBtn">➕ Ajouter un centre</button>
     </div></div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
   document.getElementById('switchCisCancel').addEventListener('click',()=>overlay.remove());
   document.getElementById('addCisBtn').addEventListener('click',()=>requireAdmin(()=>{ overlay.remove(); openAddCisModal(); }));
+  document.getElementById('delCisBtn').addEventListener('click',()=>requireAdmin(()=>{ overlay.remove(); openDeleteCisModal(); }));
   document.getElementById('switchCisConfirm').addEventListener('click',()=>{
     const targetId=document.getElementById('switchCisSelect').value;
     const code=document.getElementById('switchCisCode').value.trim();
@@ -2198,7 +2341,7 @@ function render(){
     }
   }
 }
-const APP_VERSION='1.61.0'; // à incrémenter à chaque modification livrée
+const APP_VERSION='1.63.0'; // à incrémenter à chaque modification livrée
 const WEEKDAY_LABELS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 function weekdayIndex(dateStr){ const d=new Date(dateStr); return (d.getDay()+6)%7; } // 0=Lundi ... 6=Dimanche
 function mondayOfWeek(dateStr){
@@ -6133,6 +6276,10 @@ async function closeVehicleCheck(v){
   // tôt le matin "n'a pas été enregistrée".
   const closureDate = v.checkFrequency==='quotidien' ? shiftedDailyKey() : todayStr();
   v.checkHistory.push({date:closureDate,pct:st.pct,overall:st.overall,checkedBy:currentCheckerLabel(),anomaliesSnapshot,replacedSnapshot});
+  // v1.63.0 : photo complète de l'inventaire à cet instant, rangée dans un document séparé (n'alourdit pas
+  // le document du centre), pour pouvoir réimprimer l'inventaire de ce jour plus tard. Copie prise ICI,
+  // avant toute autre modification ; l'envoi se fait en tâche de fond et ne bloque jamais la clôture.
+  try{ const snap=buildVehicleSnapshot(v); saveClosureSnapshot(snap,v.id,closureDate,{checkedBy:currentCheckerLabel(),pct:st.pct,overall:st.overall}); }catch(e){ console.error(e); }
   slimHistory(14); // ne garde le détail des écarts que pour les clôtures récentes (le document est limité à ~1 Mo)
   v.activeChecker=null; // l'engin n'est plus "en cours de vérification"
   await flushSave(); // clôture = synchronisation immédiate, pas d'attente
@@ -6311,6 +6458,200 @@ function printBlankInventory(v){
   w.document.close();
   setTimeout(()=>w.print(),300);
 }
+// ---- Inventaire complet d'une date passée (v1.63.0) ----
+// Lecture seule : rien ici ne modifie l'état en cours ni les données du centre.
+// Deux sources, par ordre de fiabilité :
+//  1) la « photo de clôture » : à chaque clôture d'inventaire, une copie de l'inventaire du véhicule (sans
+//     les photos ni les historiques) est rangée dans un document À PART — le document principal du centre,
+//     limité à ~1 Mo, ne grossit donc pas. 60 dernières dates conservées par véhicule.
+//  2) à défaut (clôtures antérieures à la v1.63.0), la première sauvegarde quotidienne du centre faite
+//     APRÈS la date demandée, qui contient l'état laissé ce jour-là — avec les réserves d'usage affichées.
+const CLOSURE_SNAP_KEEP=60;
+const CLOSURE_SNAP_PREFIX='sp-inv-closure-'+BACKUP_CENTER_ID+'-';
+const CLOSURE_INDEX_KEY='sp-inv-closure-index-'+BACKUP_CENTER_ID;
+function closureSnapKey(vehicleId,date){ return CLOSURE_SNAP_PREFIX+vehicleId+'-'+date; }
+function stripPhotosDeep(o){
+  if(Array.isArray(o)){ o.forEach(stripPhotosDeep); return o; }
+  if(o && typeof o==='object'){ Object.keys(o).forEach(k=>{ if(/photos$/i.test(k)) delete o[k]; else stripPhotosDeep(o[k]); }); }
+  return o;
+}
+function buildVehicleSnapshot(v){
+  const c=JSON.parse(JSON.stringify(v));
+  ['checkHistory','dailyCheckHistory','loanHistory','breakdownHistory'].forEach(k=>{ delete c[k]; });
+  return stripPhotosDeep(c);
+}
+function parseClosureIndex(value){
+  if(!value) return {};
+  try{ const o=JSON.parse(value); return (o && typeof o==='object' && !Array.isArray(o))?o:{}; }catch(e){ return {}; }
+}
+async function saveClosureSnapshot(snapVehicle,vehicleId,date,meta){
+  // N'empêche jamais une clôture : toute erreur est seulement journalisée.
+  try{
+    const doc={vehicleId,date,savedAt:new Date().toISOString(),centerId:BACKUP_CENTER_ID,
+      checkedBy:meta.checkedBy||'',pct:meta.pct,overall:meta.overall,vehicle:snapVehicle};
+    await window.storage.set(closureSnapKey(vehicleId,date),JSON.stringify(doc),true);
+    let removed=[];
+    const compute=(cur)=>{
+      const idx=parseClosureIndex(cur);
+      const dates=Array.isArray(idx[vehicleId])?idx[vehicleId].filter(d=>BACKUP_DATE_RE.test(d)):[];
+      if(dates.indexOf(date)<0) dates.push(date);
+      dates.sort();
+      const cut=Math.max(0,dates.length-CLOSURE_SNAP_KEEP);
+      removed=dates.slice(0,cut); idx[vehicleId]=dates.slice(cut);
+      return JSON.stringify(idx);
+    };
+    if(window.storage.transact) await window.storage.transact(CLOSURE_INDEX_KEY, async(cur)=>compute(cur));
+    else { const r=await window.storage.get(CLOSURE_INDEX_KEY,true); await window.storage.set(CLOSURE_INDEX_KEY,compute(r&&r.value),true); }
+    for(const d of removed){ try{ await window.storage.delete(closureSnapKey(vehicleId,d),true); }catch(e){} }
+  }catch(e){ console.error('Photo de clôture non enregistrée (sans conséquence sur la clôture) :',e); }
+}
+// Cherche l'inventaire d'un véhicule à une date : {ok:true, source, vehicle, ...} ou {ok:false, reason}.
+async function loadInventoryForDate(vehicleId,vehicleName,date){
+  try{
+    const ri=await window.storage.get(CLOSURE_INDEX_KEY,true);
+    const idx=parseClosureIndex(ri&&ri.value);
+    if(Array.isArray(idx[vehicleId]) && idx[vehicleId].indexOf(date)>=0){
+      const r=await window.storage.get(closureSnapKey(vehicleId,date),true);
+      if(r&&r.value){
+        const d=JSON.parse(r.value);
+        if(d && d.vehicle && Array.isArray(d.vehicle.emplacements))
+          return {ok:true,source:'closure',vehicle:d.vehicle,savedAt:d.savedAt,checkedBy:d.checkedBy,pct:d.pct};
+      }
+    }
+  }catch(e){ console.error(e); }
+  let dates;
+  try{ dates=await readBackupIndex(); }
+  catch(e){ return {ok:false,reason:'Impossible de lire les sauvegardes du centre (connexion ?).'}; }
+  const after=dates.filter(d=>d>date).sort();
+  if(!after.length){
+    return {ok:false,reason: date>=todayStr()
+      ? 'Pour aujourd\'hui, utilise « 🖨 Imprimer (état actuel) ».'
+      : 'Aucune clôture enregistrée ni sauvegarde de ce centre après le '+fmtDate(date)+' : l\'inventaire de ce jour n\'est pas disponible. (La sauvegarde du lendemain est faite à la première ouverture de l\'appli dans ce centre.)'};
+  }
+  // Trop loin après la date demandée (date plus ancienne que les sauvegardes conservées, ou longue
+  // période sans ouverture) : la copie ne refléterait plus ce jour-là.
+  if(after[0]>addDaysStr(date,7)) return {ok:false,reason:'Aucune sauvegarde de ce centre dans les 7 jours qui suivent le '+fmtDate(date)+' (les sauvegardes sont conservées 30 jours) : inventaire de ce jour non disponible.'};
+  const backupDate=after[0];
+  let r;
+  try{ r=await window.storage.get(DAILY_BACKUP_PREFIX+backupDate,true); }
+  catch(e){ return {ok:false,reason:'Impossible de lire la sauvegarde du '+fmtDate(backupDate)+' (connexion ?).'}; }
+  if(!r||!r.value) return {ok:false,reason:'Sauvegarde du '+fmtDate(backupDate)+' introuvable.'};
+  let data; try{ data=JSON.parse(r.value); }catch(e){ return {ok:false,reason:'Sauvegarde du '+fmtDate(backupDate)+' illisible.'}; }
+  const veh=(data.vehicles||[]).find(x=>x.id===vehicleId) || (data.vehicles||[]).find(x=>x.name===vehicleName);
+  if(!veh||!Array.isArray(veh.emplacements)) return {ok:false,reason:'Ce véhicule n\'existe pas dans la sauvegarde du '+fmtDate(backupDate)+'.'};
+  const closures=(veh.checkHistory||[]).filter(h=>h.date===date);
+  return {ok:true,source:'backup',vehicle:veh,backupDate,closures};
+}
+function addDaysStr(d,n){ const x=new Date(d+'T12:00:00Z'); x.setUTCDate(x.getUTCDate()+n); return x.toISOString().slice(0,10); }
+function nextDayStr(d){ return addDaysStr(d,1); }
+function buildDatedInventoryHtml(info,date,centerName){
+  const v=info.vehicle, esc=escapeHtml;
+  const st=(o)=>{ const s=STATUS[o.status]; return s?s.label:(o.status?String(o.status):'À vérifier'); };
+  const ctl=(o)=>o.lastCheck?(fmtDate(o.lastCheck)+(o.checkedBy?' — '+esc(o.checkedBy):'')):'—';
+  const det=(o)=>{
+    const p=[];
+    if(o.lot) p.push('Lot '+esc(o.lot));
+    if(o.expiry) p.push('Pér. '+fmtDate(o.expiry));
+    if(o.invNum) p.push('N° '+esc(o.invNum));
+    if(o.regType==='O2'||o.regType==='ARI'){ p.push('Pression '+(o.pressureBar!==''&&o.pressureBar!==undefined?esc(String(o.pressureBar))+' bar':'non relevée')+(o.nominalPressure?' / '+esc(String(o.nominalPressure))+' bar':'')); }
+    if((o.status==='manquant'||o.status==='perime')&&o.qtyMissing) p.push('Qté manquante '+esc(String(o.qtyMissing)));
+    const cm=(o.comments||[]).map(c=>c&&c.text).filter(Boolean);
+    if(cm.length) p.push('<i>'+esc(cm.slice(-2).join(' — '))+'</i>');
+    return p.join(' · ');
+  };
+  const cls=(o)=>(o.status==='manquant'||o.status==='perime'||o.status==='hs')?'bad':(o.lastCheck===date?'today':'');
+  let body='';
+  (v.emplacements||[]).forEach(emp=>{
+    body+=`<div class="emp-block"><h3>${esc(emp.name)}</h3><table><tr><th>Article</th><th>Qté</th><th>État</th><th>Détails</th><th>Contrôlé le / par</th></tr>`;
+    (emp.articles||[]).forEach(a=>{
+      const isCont=a.isContainer!==undefined?a.isContainer:!!(a.sousArticles&&a.sousArticles.length);
+      if(isCont){
+        const lockTxt=a.locked?('✓ '+esc(a.lockLabel||'Complet')):'Non '+(/plomb/i.test(a.lockLabel||'')?'plombé':'complet')+' — contenu ci-dessous';
+        body+=`<tr class="${a.locked&&a.lastCheck===date?'today':''}"><td><b>${esc(a.name)}</b></td><td>${esc(String(a.qty??''))}</td><td>${lockTxt}</td><td>${det(a)}</td><td>${ctl(a)}</td></tr>`;
+      } else {
+        body+=`<tr class="${cls(a)}"><td>${esc(a.name)}</td><td>${esc(String(a.qty??''))}</td><td>${st(a)}</td><td>${det(a)}</td><td>${ctl(a)}</td></tr>`;
+      }
+      (a.sousArticles||[]).forEach(s=>{
+        body+=`<tr class="${cls(s)}"><td class="ind1">↳ ${esc(s.name)}</td><td>${esc(String(s.qty??''))}</td><td>${isCont&&a.locked?'(dans contenant '+esc(a.lockLabel||'complet')+')':st(s)}</td><td>${det(s)}</td><td>${ctl(s)}</td></tr>`;
+        (s.sousArticles||[]).forEach(ss=>{
+          body+=`<tr class="${cls(ss)}"><td class="ind2">↳↳ ${esc(ss.name)}</td><td>${esc(String(ss.qty??''))}</td><td>${isCont&&a.locked?'':st(ss)}</td><td>${det(ss)}</td><td>${ctl(ss)}</td></tr>`;
+        });
+      });
+    });
+    body+='</table></div>';
+  });
+  let source;
+  if(info.source==='closure'){
+    const t=info.savedAt?new Date(info.savedAt):null;
+    source=`Photo enregistrée à la clôture du ${fmtDate(date)}${t&&!isNaN(t)?' à '+t.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}):''}${info.checkedBy?' — clôturé par '+esc(info.checkedBy):''}${info.pct!==undefined?' — '+esc(String(info.pct))+' % conforme':''}.`;
+  } else {
+    const cl=info.closures||[];
+    source=`Reconstitué depuis la sauvegarde automatique du ${fmtDate(info.backupDate)} (état enregistré au début de cette journée). `+
+      (cl.length?`Clôture du ${fmtDate(date)} : ${esc(cl[cl.length-1].checkedBy||'—')} — ${esc(String(cl[cl.length-1].pct))} % conforme. `:`<b>Aucune clôture enregistrée le ${fmtDate(date)} pour ce véhicule.</b> `)+
+      (info.backupDate!==nextDayStr(date)?`<b>Attention : pas de sauvegarde le lendemain, des modifications faites entre le ${fmtDate(date)} et le ${fmtDate(info.backupDate)} peuvent apparaître.</b> `:'')+
+      `Les lignes surlignées ont été contrôlées le ${fmtDate(date)}.`;
+  }
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Inventaire ${esc(v.name)} — ${fmtDate(date)}</title>
+    <style>
+      @page{margin:8mm;size:A4;}
+      *{box-sizing:border-box;}
+      body{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:9.5px;line-height:1.25;margin:0;padding:8px;}
+      h1{font-size:14px;margin:0 0 2px;}
+      h3{font-size:10px;margin:0;background:#000;color:#fff;padding:2px 5px;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+      .meta{color:#333;font-size:9px;margin-bottom:4px;}
+      .src{font-size:9px;border:1px solid #999;padding:4px 6px;margin-bottom:8px;}
+      .emp-block{break-inside:avoid;margin-bottom:8px;}
+      table{width:100%;border-collapse:collapse;font-size:9px;}
+      th{text-align:left;padding:1px 3px;border-bottom:1px solid #333;font-size:8.5px;}
+      td{padding:1px 3px;border-bottom:1px solid #ddd;vertical-align:top;}
+      td.ind1{padding-left:12px;} td.ind2{padding-left:22px;}
+      tr.today td{background:#eef6ee;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+      tr.bad td{background:#fbe3e3;font-weight:bold;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+      .bar{position:sticky;top:0;background:#fff;padding:8px 0;margin-bottom:6px;border-bottom:1px solid #ccc;font-size:12px;}
+      .bar button{font-size:14px;padding:8px 14px;margin-right:8px;}
+      .foot{margin-top:10px;font-size:8.5px;color:#555;}
+      @media print{ .bar{display:none;} }
+    </style></head><body>
+    <div class="bar"><button onclick="window.print()">🖨 Imprimer / PDF</button><button onclick="window.close()">Fermer</button><br><span>Pour un PDF : dans la fenêtre d'impression, choisis « Enregistrer au format PDF » comme imprimante.</span></div>
+    <h1>Inventaire du ${fmtDate(date)} — ${esc(v.name)}</h1>
+    <div class="meta">${esc(centerName)}${v.cis?' · '+esc(v.cis):''}${v.immat?' · '+esc(v.immat):''}</div>
+    <div class="src">${source}</div>
+    ${body}
+    <div class="foot">Document généré le ${new Date().toLocaleString('fr-FR')} depuis Vérif v${esc(APP_VERSION)} — lecture seule.</div>
+    </body></html>`;
+}
+function openDatedInventoryModal(vehicleId){
+  const v0=state.vehicles.find(x=>x.id===vehicleId); if(!v0) return;
+  const vehicleName=v0.name;
+  const lastClosure=(v0.checkHistory||[]).map(h=>h.date).filter(d=>d&&d<todayStr()).sort().pop();
+  const def=lastClosure||addDaysStr(todayStr(),-1);
+  const overlay=document.createElement('div'); overlay.className='overlay';
+  overlay.innerHTML=`<div class="modal"><h3>🖨 Inventaire d'une date passée — ${escapeHtml(vehicleName)}</h3>
+    <p style="font-size:12.5px;color:var(--muted);">Imprime l'inventaire complet tel qu'il était un jour donné (articles, états, quantités, n° et pression des bouteilles, qui a contrôlé). Lecture seule : rien n'est modifié.</p>
+    <div class="field"><label>Date de l'inventaire</label><input type="date" id="dinvDate" value="${def}" max="${todayStr()}"></div>
+    <div id="dinvMsg" style="font-size:12.5px;margin:6px 0;"></div>
+    <div class="modal-actions"><button class="btn ghost" id="dinvCancel">Fermer</button><button class="btn primary" id="dinvGo">🖨 Préparer l'impression</button></div></div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  document.getElementById('dinvCancel').addEventListener('click',()=>overlay.remove());
+  document.getElementById('dinvGo').addEventListener('click',async()=>{
+    const date=document.getElementById('dinvDate').value;
+    const msg=document.getElementById('dinvMsg');
+    if(!BACKUP_DATE_RE.test(date||'')){ msg.innerHTML='<span style="color:var(--red-dark);">Choisis une date.</span>'; return; }
+    // La fenêtre est ouverte tout de suite (dans le clic) pour ne pas être bloquée comme pop-up.
+    const w=window.open('','_blank');
+    if(!w){ msg.innerHTML='<span style="color:var(--red-dark);">Le navigateur a bloqué la fenêtre d\'impression — autorise les pop-ups pour ce site.</span>'; return; }
+    try{ w.document.write('<p style="font-family:Arial;padding:20px;">Chargement de l\'inventaire du '+fmtDate(date)+'…</p>'); }catch(e){}
+    msg.innerHTML='<span style="color:var(--muted);">Recherche de l\'inventaire du '+fmtDate(date)+'…</span>';
+    const info=await loadInventoryForDate(vehicleId,vehicleName,date);
+    if(!info.ok){ try{ w.close(); }catch(e){} msg.innerHTML='<span style="color:var(--red-dark);">'+escapeHtml(info.reason)+'</span>'; return; }
+    try{
+      w.document.open(); w.document.write(buildDatedInventoryHtml(info,date,getSelectedCenter().name)); w.document.close();
+      msg.innerHTML='<span style="color:var(--green-dark);">Inventaire ouvert dans un nouvel onglet'+(info.source==='closure'?' (photo de clôture).':' (reconstitué depuis la sauvegarde du '+fmtDate(info.backupDate)+').')+'</span>';
+      setTimeout(()=>{ try{ w.focus(); w.print(); }catch(e){} },400);
+    }catch(e){ msg.innerHTML='<span style="color:var(--red-dark);">Impossible d\'afficher l\'inventaire : '+escapeHtml(e.message)+'</span>'; }
+  });
+}
 function renderCheck(vehicleId){
   const v=state.vehicles.find(x=>x.id===vehicleId); if(!v){currentView={type:'dashboard'};return render();}
   const s=vehicleStats(v);
@@ -6342,6 +6683,7 @@ function renderCheck(vehicleId){
         ${readOnly||!adminAccessible()?'':'<button class="btn ghost small" id="toConfigTab">Configurer</button>'}
         <button class="btn ghost small" id="printCheckBtn">🖨 Imprimer (état actuel)</button>
         <button class="btn ghost small" id="printBlankBtn">🖨 Imprimer un inventaire vierge</button>
+        <button class="btn ghost small" id="printDatedBtn">🖨 Inventaire d'une date passée</button>
         <button class="btn ghost small" id="viewHistoryBtn">🕒 Historique des clôtures</button>
         ${readOnly?'':'<button class="btn ghost small" id="restartCheckBtn" style="color:var(--red-dark);">🔄 Recommencer l\'inventaire</button>'}
       </div></div>
@@ -6498,6 +6840,7 @@ function renderCheck(vehicleId){
   document.getElementById('expandAllBtn').addEventListener('click',()=>{checkOpenEmps=new Set(v.emplacements.map(e=>e.id)); render();});
   document.getElementById('printCheckBtn').addEventListener('click',()=>{checkOpenEmps=new Set(v.emplacements.map(e=>e.id)); render(); setTimeout(()=>window.print(),200);});
   document.getElementById('printBlankBtn').addEventListener('click',()=>printBlankInventory(v));
+  document.getElementById('printDatedBtn').addEventListener('click',()=>openDatedInventoryModal(v.id));
   const fuelRange=document.getElementById('dailyFuelRange');
   if(fuelRange){
     fuelRange.addEventListener('input',e=>{
@@ -7672,6 +8015,7 @@ async function showFirstLaunchCenterPicker(){
     const target=CIS_REGISTRY.find(c=>c.id===id);
     if(!target||code!==target.code){ alert('Code incorrect pour ce centre. Vérifie auprès de ton responsable de centre.'); return; }
     localStorage.setItem('sp-selected-center',id);
+    localStorage.removeItem('sp-selected-center-removed');
     location.reload();
   });
 }
@@ -7680,7 +8024,7 @@ if(getSelectedCenterId()===null){
 } else {
   document.getElementById('activeCisLabel').textContent=getSelectedCenter().name; // affiché tout de suite, avant même la fin du chargement des données
   loadState();
-  loadCisRegistry();
+  loadCisRegistry().then(()=>{ if(registryLoadedFromServer) checkSelectedCenterStillExists(); });
   // Vérification périodique des nouvelles consignes pour déclencher une notification locale (voir
   // pollConsignesForNotification) — sans cet intervalle, la fonction ne serait jamais appelée.
   setInterval(pollConsignesForNotification,45000);
